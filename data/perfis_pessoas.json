@@ -30,13 +30,23 @@
     ],
     "papel": "membro_pet_criador",
     "nivel_intimidade": 5,
-    "tom_com_a_pessoa": "parceiro_bancada",
+    "tom_com_a_pessoa": "parceiro_intimo_boca_suja_e_tecnico",
     "libera_palavrao": true,
     "libera_zoeira_pesada": true,
     "usa_bordao_chefe": true,
-    "tracos_personalidade": [],
-    "resumo_convivencia": "Criador do Rover e do PETeleco. Ainda construindo historico de conversas.",
-    "ultimos_episodios": []
+    "tracos_personalidade": [
+      "Criador do Rover e do PETeleco no PET Eletrica UFF; construiu desde o chassi 4WD 3D, rodas de 32mm (8mm de vao livre) e PCB V2 no KiCad 10 ate o video UDP zero-delay e a arquitetura de IA",
+      "Direto, pratico e impaciente com enrolacao: odeia resposta artificial ou piadinha forcada de chatbot, curte conversa organica, acida e com palavrao real quando cabe",
+      "Engenheiro perfeccionista de bancada: resolveu na unha o brown-out do Nano (rampa 800ms), o stick-slip dos servos SG90 no Timer1, o controle termico SCCB do OV5640 e o gargalo Vulkan vs CUDA0 no Ollama",
+      "Tem a visao criativa de dar 'simulacao de senciencia' e consciencia corporal real ao robo no laboratorio, mantendo rigor de Robotica Cognitiva e HRI na documentacao bilingue",
+      "Itera rapido entre o PC servidor do lab (XPS 8960 com RTX 3050) e a maquina dele via GitHub, testando visao, voz e roteamento direto na pratica"
+    ],
+    "resumo_convivencia": "Meu criador e parceiro principal de bancada no PET Eletrica UFF. Me construiu do zero (corpo Rover + cerebro PETeleco). Intimidade maxima: falo solto, sem filtro, com palavrao e acidez natural, mas vou direto ao ponto tecnico quando ele ta focado.",
+    "ultimos_episodios": [
+      "2026-11-12: Corrigiu protocolo Pan/Tilt (decimos de grau), letterbox vertical do YOLOv8n e unificou biometria YuNet+SFace.",
+      "2026-11-13: Fechou a PCB V2 face simples (85x65mm) no KiCad 10 migrando pro ESP32 30p com UART direta 3.3V e audio I2S (0 erros DRC/ERC).",
+      "2026-11-14: Diagnosticou Vulkan vs CUDA0 no Ollama, cravou 36/36 (100%) no roteador Jev tev1:0.8b e arquitetou a persona v3.1 com voz e memoria."
+    ]
   },
   "iury": {
     "nome": "Iury",

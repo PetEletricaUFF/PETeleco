@@ -7,7 +7,7 @@ Camada 1 (Ficha Quente em `data/perfis_pessoas.json`, teto fixo ~120 tokens/pess
     - Flags comportamentais (`papel`, `nivel_intimidade`, `tom_com_a_pessoa`,
       `libera_palavrao`, `libera_zoeira_pesada`, `usa_bordao_chefe`).
     - Maximo de 5 bullets em `tracos_personalidade`, 1 resumo curto em
-      `resumo_convivencia` (<= 250 chars) e janela FIFO de 5 `ultimos_episodios`.
+      `resumo_convivencia` (<= 350 chars) e janela FIFO de 5 `ultimos_episodios`.
 
 Camada 2 (Arquivo Frio em `data/memoria_longa.sqlite`):
     - Historico acumulativo completo com busca textual sob demanda (`0 tokens`
@@ -63,7 +63,7 @@ def carregar_env() -> Dict[str, str]:
 
 MAX_TRACOS = 5
 MAX_EPISODIOS_QUENTES = 5
-MAX_RESUMO_CHARS = 250
+MAX_RESUMO_CHARS = 350
 
 _STOPWORDS_NOMES = {
     "eu", "tu", "voce", "ele", "ela", "um", "uma", "o", "a", "os", "as",

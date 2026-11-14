@@ -43,7 +43,7 @@ O arquivo [`data/perfis_pessoas.json`](../data/perfis_pessoas.json) guarda a **f
 | ID | Nome Oficial | Apelidos & Variações de STT (`apelidos_stt`) | Estado Inicial |
 |---|---|---|---|
 | `felipe_sass` | **Felipe Sass** | `Felipe Sass`, `Professor Felipe`, `Professor Sass`, `Sass`, `Felipe Sadi`, `Felipe Sas` | **Tutor / Orientador** (TEE/UFF, Máquinas Elétricas & Supercondutividade Aplicada — respeito absoluto pré-travado) |
-| `caio` | **Caio** | `Caio` | Criador do projeto (`parceiro_bancada`, traços vazios para ir acumulando com o uso) |
+| `caio` | **Caio** | `Caio` | **Criador / Parceiro Principal** (`parceiro_intimo_boca_suja_e_tecnico`, ficha preenchida com histórico real do Rover + PETeleco) |
 | `iury` | **Iury** | `Iury`, `Yuri`, `Iuri` | **Blank (`em_observacao`)** — aprende o perfil ao conversar |
 | `jhonatan` | **Jhonatan** | `Jhonatan`, `Jonathan`, `veio`, `véio`, `jon jon`, `jhon jhon` | **Blank (`em_observacao`)** — aprende o perfil ao conversar |
 | `manuel` | **Manuel** | `Manuel`, `Manoel`, `Manel` | **Blank (`em_observacao`)** — aprende o perfil ao conversar |
@@ -74,6 +74,29 @@ O arquivo [`data/perfis_pessoas.json`](../data/perfis_pessoas.json) guarda a **f
     ],
     "resumo_convivencia": "Tutor orientador do PET Eletrica UFF.",
     "ultimos_episodios": []
+  },
+  "caio": {
+    "nome": "Caio",
+    "apelidos_stt": ["Caio"],
+    "papel": "membro_pet_criador",
+    "nivel_intimidade": 5,
+    "tom_com_a_pessoa": "parceiro_intimo_boca_suja_e_tecnico",
+    "libera_palavrao": true,
+    "libera_zoeira_pesada": true,
+    "usa_bordao_chefe": true,
+    "tracos_personalidade": [
+      "Criador do Rover e do PETeleco no PET Eletrica UFF (chassi 4WD 3D, PCB V2 no KiCad 10, UDP zero-delay e IA)",
+      "Direto e impaciente com enrolacao: odeia resposta forcada de chatbot, curte conversa organica, acida e com palavrao real",
+      "Engenheiro perfeccionista de bancada: resolveu brown-out do Nano, stick-slip dos SG90, termico SCCB do OV5640 e Vulkan vs CUDA0",
+      "Visao criativa de simulacao de senciencia / consciencia corporal com rigor cientifico em Robotica Cognitiva e HRI",
+      "Itera rapido entre o XPS 8960 (RTX 3050) do lab e a maquina propria via GitHub"
+    ],
+    "resumo_convivencia": "Meu criador e parceiro principal de bancada no PET Eletrica UFF. Me construiu do zero (corpo Rover + cerebro PETeleco).",
+    "ultimos_episodios": [
+      "2026-11-12: Corrigiu protocolo Pan/Tilt, letterbox vertical do YOLOv8n e unificou YuNet+SFace.",
+      "2026-11-13: Fechou a PCB V2 face simples (85x65mm) no KiCad 10 (0 erros DRC/ERC).",
+      "2026-11-14: Cravou 36/36 no roteador Jev tev1:0.8b e arquitetou a persona v3.1 com voz e memoria."
+    ]
   },
   "jhonatan": {
     "nome": "Jhonatan",
@@ -291,7 +314,7 @@ Se simplesmente fôssemos concatenando frases num arquivo texto e colando tudo n
    - Única coisa que entra **sempre** no prompt de todo turno.
    - Contém os flags comportamentais (`papel`, `nivel_intimidade`, `tom_com_a_pessoa`, `libera_palavrao`, `libera_zoeira_pesada`, `usa_bordao_chefe`) + 3 campos com **tamanho máximo travado**:
      - `tracos_personalidade`: máximo **5 bullets** sintetizados (reescritos/fundidos quando surge traço novo, nunca acumulados infinitamente).
-     - `resumo_convivencia`: **1 parágrafo curto** (máx. ~250 caracteres) resumindo quem a pessoa é e como o robô se relaciona com ela.
+     - `resumo_convivencia`: **1 parágrafo curto** (máx. ~350 caracteres) resumindo quem a pessoa é e como o robô se relaciona com ela.
      - `ultimos_episodios`: janela **FIFO** com apenas os **últimos 3 a 5 fatos recentes** (o que é mais antigo sai da ficha quente e fica no arquivo frio).
    - **Resultado:** Mesmo depois de **1 ano** conversando todo dia com os 10 membros do PET, o contexto enviado por turno **nunca cresce**.
 2. **Camada 2 — Arquivo Frio Episódico (`data/memoria_longa.sqlite` com `FTS5`):**
