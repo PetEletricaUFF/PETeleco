@@ -1,51 +1,65 @@
-# 🤖 Instruções para Agentes de IA (`AGENTS.md` — `PetEletricaUFF/PETeleco`)
+# 🤖 AI Agent Guidelines (`AGENTS.md` — `PetEletricaUFF/PETeleco`)
 
-Este documento define as diretrizes obrigatórias e o contexto compartilhado para qualquer agente de IA trabalhando no repositório **`PETeleco`**.
+🇺🇸 **English** | [🇧🇷 Leia em Português (BR)](AGENTS.pt-BR.md)
+
+This document establishes mandatory engineering guidelines, behavioral rules, and shared physical/research context for any AI agent working in the **`PetEletricaUFF/PETeleco`** repository.
 
 ---
 
-## 🔗 1. Desenvolvimento Paralelo: `PETeleco` + `CaioHVectorA/Rover`
+## 🔗 1. Parallel Dual-Repository Architecture: `PETeleco` + `CaioHVectorA/Rover`
 
-Este projeto faz parte de uma pesquisa em andamento conduzida em **dois repositórios paralelos que compartilham o mesmo contexto físico e hardware**:
+`PETeleco` is part of an active research initiative developed across **two parallel repositories that share the exact same physical robot, laboratory environment, and host inference PC**:
 
-| Repositório | Escopo Dedicado | Caminho Local / URL |
+| Repository | Dedicated Scope | Local Path / Remote |
 |---|---|---|
-| **`PetEletricaUFF/PETeleco`** *(este repo)* | **Cérebro Cognitivo & IA:** Persona ("robô senciente" / *Embodied AI* / HRI), roteamento probabilístico hierárquico (Jev-based), pipeline de fala (VAD/STT/TTS), memória biográfica persistente por pessoa e protocolos de decisão/segurança. | [`PETeleco`](https://github.com/PetEletricaUFF/PETeleco) (`c:\Users\caihe\Documents\develop\PETeleco`) |
-| **`CaioHVectorA/Rover`** *(repo irmão)* | **Corpo Físico & Visão Embarcada:** Mecânica 4WD (chassi 3D ABS), PCB V2 no KiCad, firmwares (`ESP32-S3-CAM` + controlador do chassi), enlace serial `<C,a,b,c>`, streaming UDP zero-buffer e módulos práticos de visão computacional. | [`CaioHVectorA/Rover`](https://github.com/CaioHVectorA/rover) (`c:\Users\caihe\Documents\develop\rover`) |
+| **`PetEletricaUFF/PETeleco`** *(this repo)* | **Cognitive Brain, Persona & Protocols:** Simulated sentience / persona expression, Jev-based probabilistic routing (`/v1/systemone`), local listening/speaking pipelines (VAD/STT/TTS), persistent biographical memory linked to face embeddings, and safety-gated decision protocols. | [`PETeleco`](https://github.com/PetEletricaUFF/PETeleco) (`c:\Users\caihe\Documents\develop\PETeleco`) |
+| **`CaioHVectorA/Rover`** *(sister repo)* | **Physical Body & Embedded Vision:** 4WD ABS 3D-printed chassis, KiCad PCB designs, microcontroller firmware (`ESP32-S3-CAM` + chassis MCU), serial `<C,a,b,c>` actuation protocol, zero-buffer UDP video streaming, and standalone computer vision tools (`YuNet + SFace`, `YOLOv8n`, `MediaPipe Hands`). | [`CaioHVectorA/Rover`](https://github.com/CaioHVectorA/rover) (`c:\Users\caihe\Documents\develop\rover`) |
 
-### Regra Crítica de Isolamento
-* **NUNCA modifique, apague arquivos ou execute comandos Git (`git add`, `commit`, `push`, `checkout`) dentro de `c:\Users\caihe\Documents\develop\rover` enquanto estiver trabalhando em `PETeleco`** (e vice-versa), salvo se o usuário autorizar expressamente o repositório específico.
-* Trate `PETeleco` como repositório limpo e simples focado exclusivamente em **IA, protocolos, persona e pipeline**, consumindo os contratos físicos definidos em `CaioHVectorA/Rover` sem duplicar arquivos CAD, KiCad, compras ou firmwares C++.
-
----
-
-## 🚫 2. Regra de Git (Apenas com Autorização Explícita)
-
-* **Não faça `git commit` ou `git push` automaticamente** em trocas normais de desenvolvimento/brainstorm.
-* Só execute comandos de gravação no Git (`git add`, `git commit`, `git push`) quando o usuário pedir explicitamente.
+### Strict Isolation Rule
+* **NEVER modify, delete, stage, commit, or push anything inside `CaioHVectorA/Rover` (`c:\Users\caihe\Documents\develop\rover`) while operating in `PETeleco`** (and vice-versa), unless the user explicitly authorizes an action in that specific repository.
+* Keep `PETeleco` clean, modular, and strictly focused on **AI layers, protocols, persona, memory, and pipelines** — consume the hardware/transport contracts from `Rover` without duplicating KiCad layouts, 3D CAD notes, purchase spreadsheets, or C++ embedded firmware here.
 
 ---
 
-## ⚙️ 3. Contexto Físico & Hardware Compartilhado (Inalterável Sem Validação)
+## 🚫 2. Git Control Rule (Explicit User Authorization Only)
 
-1. **Corpo Físico Atual (`Rover` V1 Montado → Transição PCB V2):**
-   * Chassi 4WD em ABS (rodas 32 mm, vão livre 8,0 mm), 4x motores DC `JGA16-050`, driver `TB6612FNG`, cabeça Pan/Tilt (2x `SG90`) com `ESP32-S3-CAM` (`OV5640`, vídeo UDP porta `5005`).
-   * **V1 (atual na bancada):** `Arduino Nano V3` em placa perfurada comandando motores/servos via protocolo ASCII `<C,a,b,c>`.
-   * **V2 planejada (`rover_pcb_v2_chassi`):** Substitui o Nano por `ESP32 DevKit V1 (30p)` e integra áudio `I2S` (`INMP441` microfone + `MAX98357A` amplificador), OLED `SSD1306` e temperatura `DS18B20`.
-   * **Restrição física de teste de voz:** Como o hardware `I2S` ainda não está fisicamente montado na V1, todos os testes iniciais de escuta e fala (VAD / STT / TTS) usam **microfone e saída de áudio do próprio PC host**.
-   * **Restrição sensorial de navegação:** Sem sensor ToF/ultrassom no chassi até o momento; a aproximação de objetos depende da câmera na cabeça móvel.
+* **Never run `git add`, `git commit`, `git push`, or create branches automatically** during regular brainstorming, debugging, or editing turns.
+* Execute Git staging/commits/pushes **only when the user explicitly requests it** (e.g., *"push to GitHub"*, *"commit these changes"*). Keep changes local until asked.
 
-2. **Máquina Hospedeira de Inferência (PC Host):**
-   * **PC:** Dell Inc. XPS 8960 — Windows 11 Home Single Language 64-bit
-   * **CPU / RAM:** Intel Core i5-14600 (14 núcleos / 20 threads) | 16 GB DDR5-5600
+---
+
+## ⚙️ 3. Fixed Shared Hardware & Host Compute Context
+
+Never overwrite or ignore these verified physical and computational facts:
+
+1. **Shared Mobile Robot Body (`Rover` V1 Mounted → V2 PCB Planned):**
+   * **Traction & Clearance:** 4x cylindrical geared DC motors **JGA16-050** (16 mm diameter, 3 mm D-shaft, **never N20**), dual MOSFET driver **TB6612FNG**, **32 mm wheels** (outward hub mounting) delivering **8.0 mm real ground clearance** ($16\text{ mm} - 8\text{ mm} = 8.0\text{ mm}$, solving the critical 3.0 mm clearance of earlier 22 mm wheels).
+   * **Power:** `2S 7.4V 2500mAh` Li-Ion pack with BMS + `Mini 560` Step-Down (`5.0V` up to `5A`).
+   * **Head (Pan/Tilt):** 2x **SG90** micro servos moving an **ESP32-S3-CAM N16R8** (`OV5640` 5 MP sensor, zero-buffer UDP video on port `5005`, magic `'RVR1'`).
+   * **Chassis MCU Transition (V1 → V2):**
+     * **V1 (Currently Assembled on Bench):** `Arduino Nano V3` on perfboard communicating via inverted serial (`ESP32 IO43 -> BC337 -> Nano D0` at `9600 bps`, ASCII `<C,a,b,c>` frames).
+     * **V2 (KiCad Single-Sided PCB `rover_pcb_v2_chassi` designed, pending fabrication):** Replaces Nano with **30-pin `ESP32 DevKit V1`** communicating with the head over **direct 3.3V hardware UART** (`J2` 4-pin connector: `GND`, `+5V`, `GPIO16/CAM-TX`, `GPIO23/CAM-RX` — ESP-NOW explicitly discarded to avoid 2.4 GHz radio contention with UDP video), adding `I2S` digital audio (**`INMP441`** mic + **`MAX98357A`** 3W amp), **`SSD1306`** I2C OLED, **`DS18B20`** temperature sensor, and **`WS2812B`** LED strip.
+   * **Critical Physical Constraints for AI Testing:**
+     * **No physical I2S audio yet on V1:** Initial listening/speaking experiments (VAD, STT, TTS, persona audio pools) must use the **host PC's microphone and speakers**.
+     * **No ToF / ultrasonic distance sensor on chassis yet:** Distance estimation for object approach relies solely on the camera (when Pan rotates sharply sideways, forward obstacle blind spots exist).
+
+2. **Host Inference Machine (Remote / Lab Server PC):**
+   * **System:** Dell Inc. XPS 8960 — Windows 11 Home Single Language 64-bit
+   * **CPU / RAM:** Intel Core i5-14600 (14 cores / 20 threads) | 16 GB DDR5-5600
    * **GPU:** NVIDIA GeForce **RTX 3050 OEM (8 GB VRAM)**
-   * **Orçamento estrito de VRAM:** Manter modelos residentes confortavelmente dentro dos **8 GB de VRAM** (~2,5–3,0 GB somados planejados) para evitar swap em RAM e manter latência sub-segundo.
-   * **Descoberta operacional (Ollama no Windows):** Sempre iniciar o daemon com **`OLLAMA_VULKAN=0`** para forçar o backend nativo **`CUDA0`** (evitando `14,19 s` de compilação de shaders Vulkan na 1ª chamada).
+   * **Strict VRAM Budget:** Keep **all active local models resident within 8 GB VRAM** (`~2.5–3.0 GB` combined target across STT + Router + local CV) to prevent system RAM swap and latency spikes.
+   * **Windows CUDA Operational Rule (Ollama):** Portable Ollama (`v0.40.16` in `C:\Ollama`) defaults to Vulkan on Windows unless overridden (`14.19 s` first-call shader compilation). **Always launch with `OLLAMA_VULKAN=0`** so `tev1:0.8b` runs on native **`CUDA0`** (`1245.7 MiB` VRAM, `keep_alive=-1`). Note that the initial cold load after Windows boot takes ~27–45 s (`mmap` disabled on `windows_cuda`), then sustains sub-400 ms inference.
+   * **Decoupled Portability Preference:** Keep pipeline layers decoupled via clean local HTTP / socket interfaces; avoid heavy monolithic Python `transformers` pipelines when lighter runtime APIs (e.g., Ollama `/v1/systemone`, ONNX Runtime / OpenCV DNN) preserve portability.
 
 ---
 
-## 📖 4. Enquadramento Acadêmico, Documentação & Fidelidade
+## 🎓 4. Academic Framing, Documentation Integrity & Tone
 
-* **Enquadramento:** A proposta criativa de "robô senciente com persona" deve ser enquadrada academicamente como **Robótica Cognitiva / Embodied AI / Interação Humano-Robô (HRI)** — evitando afirmar "senciência literal" em textos científicos e destacando os diferenciais reais: arquitetura hierárquica orientada a custo/latência e travas probabilísticas de segurança antes de acionar motores.
-* **Documentação Bilíngue:** Manter [`README.md`](README.md) (EN) e [`README.pt-BR.md`](README.pt-BR.md) (PT-BR), bem como [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) e [`docs/ARCHITECTURE.pt-BR.md`](docs/ARCHITECTURE.pt-BR.md), sincronizados e fiéis ao estado real do código.
-* **Memória Técnica Contínua:** Registrar marcos, benchmarks e decisões em [`docs/context.md`](docs/context.md). Nunca relatar testes ou componentes planejados como se já estivessem validados em hardware.
+* **Academic Terminology:** The creative vision is a robot with **persona** and **"simulated sentience"**; in academic papers, reports, and documentation, frame this cleanly as **Cognitive Robotics / Embodied AI / Human-Robot Interaction (HRI)** — highlight verifiable contributions (hierarchical cost/latency-oriented routing, cloud API reduction, and probabilistic confidence gating for motor safety) rather than claiming literal sentience.
+* **Bilingual Documentation Pairs (Keep Synchronized):**
+  * Overview: [`README.md`](README.md) (EN) ↔ [`README.pt-BR.md`](README.pt-BR.md) (PT-BR)
+  * Agent Rules: [`AGENTS.md`](AGENTS.md) (EN) ↔ [`AGENTS.pt-BR.md`](AGENTS.pt-BR.md) (PT-BR)
+  * Research Memory: [`docs/context.md`](docs/context.md) (EN) ↔ [`docs/context.pt-BR.md`](docs/context.pt-BR.md) (PT-BR)
+  * Technical Spec: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (EN) ↔ [`docs/ARCHITECTURE.pt-BR.md`](docs/ARCHITECTURE.pt-BR.md) (PT-BR)
+* **Strict Truthfulness & Scope Discipline:** Update `docs/context.md` / `docs/context.pt-BR.md` organically when milestones are verified. Clearly separate **benchmarked / implemented layers** (currently Layer 2 SystemOne router + 36-case text/state benchmark) from **sister-repo CV modules** (`Rover`) and **planned modules** (Layer 1 STT, Layer 3 TTS/SQLite memory, Layer 4 live orchestration).
+* **Communication Style:** Practical, concise, step-by-step maker/engineering tone (matching the user's preferred language in conversation, keeping code/commits/docs spotless).

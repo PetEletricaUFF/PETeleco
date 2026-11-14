@@ -132,10 +132,12 @@ Measured on **Windows 11 / RTX 3050 OEM (8 GB VRAM) / Ollama v0.40.16 (`OLLAMA_V
 PETeleco/
 ├── README.md                   # English documentation
 ├── README.pt-BR.md             # Documentação em Português (BR)
-├── AGENTS.md                   # AI engineering rules & shared Rover/PETeleco context
+├── AGENTS.md                   # AI engineering rules & shared Rover/PETeleco context (EN)
+├── AGENTS.pt-BR.md             # Diretrizes para agentes & contexto paralelo (PT-BR)
 ├── requirements.txt            # Minimal Python dependencies (`requests` for L2)
 ├── docs/
-│   ├── context.md              # Continuous research log & hardware constraints
+│   ├── context.md              # Continuous research memory & hardware constraints (EN)
+│   ├── context.pt-BR.md        # Memória técnica contínua e contexto físico (PT-BR)
 │   ├── ARCHITECTURE.md         # Deep-dive protocols, safety gates & models (EN)
 │   └── ARCHITECTURE.pt-BR.md   # Protocolos, travas de segurança e modelos (PT-BR)
 └── src/

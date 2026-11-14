@@ -1,63 +1,116 @@
-# 📖 Memória Técnica & Contexto de Pesquisa — `PETeleco`
+# 📖 Continuous Technical Memory & Shared Research Context (`context.md` — `PETeleco`)
 
-> *English summary available in [`README.md`](../README.md) and [`ARCHITECTURE.md`](ARCHITECTURE.md).*  
-> Registro contínuo das decisões de arquitetura, modelos, protocolos e benchmarks do projeto **`PetEletricaUFF/PETeleco`**, desenvolvido em paralelo com [`CaioHVectorA/Rover`](https://github.com/CaioHVectorA/rover).
+🇺🇸 **English** | [🇧🇷 Leia em Português (BR)](context.pt-BR.md)
 
----
-
-## 1. Origem, Propósito & Relação com `CaioHVectorA/Rover`
-
-- **Inspiração direta:** O `PETeleco` nasce diretamente da plataforma robótica [`CaioHVectorA/Rover`](https://github.com/CaioHVectorA/rover) e divide com ela o **mesmo ambiente físico de bancada, hardware móvel e computador hospedeiro**.
-- **Divisão de responsabilidades:**
-  - **`CaioHVectorA/Rover`** concentra engenharia mecânica (chassi 3D em ABS), eletrônica/PCB KiCad, firmwares (`ESP32-S3-CAM` + `Arduino Nano V3` → `ESP32 DevKit`), streaming UDP de vídeo (`zero_delay_udp.py`), biometria facial (`YuNet + SFace`), detecção/navegação (`YOLOv8n`) e gestos (`MediaPipe Hands`).
-  - **`PetEletricaUFF/PETeleco`** concentra o **núcleo cognitivo**: simulação de senciência e construção de **persona**, roteamento probabilístico local de baixa latência (Jev-based), pipeline conversacional de áudio (VAD → STT → TTS), memória biográfica persistente associada a rostos e especificação dos protocolos entre camadas.
+> **Living Engineering Record:** Updated organically whenever design decisions, architecture revisions, physical discoveries, or benchmark metrics are verified. Strictly distinguishes between **verified hardware/software measurements**, **sister-repo embodied components (`CaioHVectorA/Rover`)**, and **planned pipeline stages**.
 
 ---
 
-## 2. Contexto Físico e Computacional Compartilhado
+## 1. Project Origin, Persona Vision & Academic Framing
 
-### Corpo do Robô (Referência `Rover`)
-- **V1 em bancada:** Tração 4WD (`4x JGA16-050`, rodas 32 mm com 8,0 mm de vão livre), driver `TB6612FNG`, cabeça Pan/Tilt (`2x SG90`) com `ESP32-S3-CAM` (`OV5640`) e `Arduino Nano V3` em placa perfurada.
-- **Evolução planejada (PCB V2 — `rover_pcb_v2_chassi`):** Migra o chassi para `ESP32 DevKit V1 (30 pinos)` com áudio digital `I2S` (`INMP441` microfone + `MAX98357A` amplificador), display `OLED SSD1306` e temperatura `DS18B20`.
-- **Limitações físicas atuais relevantes para a IA:**
-  1. O hardware de áudio `I2S` ainda **não está montado na V1**; portanto, os testes iniciais de voz e escuta são conduzidos diretamente com o **microfone e saída de áudio do PC host**.
-  2. Não há sensor de distância dedicado (ToF/ultrassom) no chassi; o desvio/aproximação visual depende exclusivamente da câmera Pan/Tilt.
-
-### Servidor Local de Inferência (PC Host)
-- **Computador:** Dell Inc. XPS 8960 — Windows 11 Home Single Language 64-bit
-- **CPU / Memória:** Intel Core i5-14600 (14 cores / 20 threads) | 16 GB DDR5-5600
-- **GPU Dedicada:** NVIDIA GeForce **RTX 3050 OEM (8 GB VRAM)**
-- **Meta de projeto:** Manter todos os modelos neurais residentes dentro dos **8 GB de VRAM** (`~2,5–3,0 GB` somados) para evitar swap para RAM e eliminar engasgos de interação.
+- **Identity & Repository Split (`PetEletricaUFF/PETeleco`):**
+  - Developed within **PET Elétrica UFF** (`PetEletricaUFF`), **PETeleco** is directly inspired by and engineered **in parallel** with [`CaioHVectorA/Rover`](https://github.com/CaioHVectorA/rover).
+  - Both repositories operate on the **same physical research platform and host inference PC**, cleanly dividing concerns:
+    - **`CaioHVectorA/Rover`** owns the physical mechatronics, 3D-printed ABS chassis, KiCad PCB (`rover_pcb_v2_chassi`), microcontroller C++ firmware, zero-delay UDP telemetry/video, and standalone CV utilities.
+    - **`PetEletricaUFF/PETeleco`** owns the cognitive software brain: persona expression ("simulated sentience"), Jev-based probabilistic intent routing, continuous voice interaction (VAD/STT/TTS), persistent biographical social memory, and protocol contracts linking perception to motor/head actuation.
+- **Creative Goal & Academic Framing:**
+  - *Creative vision:* An expressive mobile companion robot with recognizable personality (**persona**), immediate social responses, continuous visual/auditory presence, face recognition (`SFace`), persistent per-person conversation memory, scene understanding, and physical motion execution (`seguir rosto`, `ir ate objeto`, `parar`, `radar`).
+  - *Academic framing:* Framed formally as **Cognitive Robotics / Embodied AI / Human-Robot Interaction (HRI)** (avoiding literal "sentience" claims in scientific papers). Its primary research contributions are:
+    1. **Cost- and latency-aware hierarchical offloading:** Resolving routine greetings, noise filtering, deterministic status checks, and motion commands locally via SystemOne probability routing (`tev1:0.8b`) + canned audio / CPU `Piper TTS` vs. escalating open/visual queries to cloud VLM/LLM (`Gemini`).
+    2. **Probabilistic motor safety interlocking:** Using calibrated choice/noul confidence scores as safety gates before energizing physical motors (`>= 0.80` direct execution, `0.50–0.79` voice confirmation prompt, `>= 0.90` emergency stop override).
 
 ---
 
-## 3. Arquitetura em Camadas & Estado Atual
+## 2. Shared Physical Robot Context (`CaioHVectorA/Rover` V1 → PCB V2)
 
-| Camada | Função | Stack / Modelos | Status no `PETeleco` |
-|---|---|---|---|
-| **C0 — Corpo & Transporte** | Vídeo baixa latência, servos, tração e telemetria | UDP porta `5005` (`'RVR1'`), Serial `<C,a,b,c>`, `I2S`/`OLED` (V2); áudio via PC na V1 | Operacional no `Rover` (vídeo/visão); áudio físico pendente V2 |
-| **C1 — Escuta Local (R$ 0)** | Corte de silêncio e transcrição contínua PT-BR | `Silero VAD` → `faster-whisper` (`base` / `small` em CUDA) | **Planejada** (próxima etapa) |
-| **C2 — Roteador Cognitivo (R$ 0)** | Filtro de conversa paralela, seleção de camada, detecção de câmera e trava de segurança motora | Ollama `>= v0.35` (`POST /v1/systemone`) + **`tev1:0.8b`** (`Q8_0`, CUDA) | **Implementada e validada** (`src/router_systemone.py`) |
-| **C3 — Execução Local, Persona & Memória (R$ 0)** | Falas prontas `.wav` (persona), handlers determinísticos (`hora`, `clima`, `bateria`, `quem vejo`), `Piper TTS` (CPU), `YuNet + SFace`, `YOLOv8n` e `SQLite`/`JSON` | Visão validada no `Rover`; handlers locais, `Piper TTS` e memória biográfica em integração no `PETeleco` | **Visão no `Rover` / Persona & Memória planejadas** |
-| **C4 — Cognição Pesada (Sob Demanda)** | Descrição de cena (`Image-to-Text`) e conversa aberta complexa | **Gemini API** (`gemini-3.5-flash` assíncrono no `Rover`, frame `<= 480 px`) | Cliente assíncrono validado no `Rover`; escalonamento integrado via C2 |
+Even though CAD/firmware files remain in `Rover`, PETeleco's AI protocols and constraints directly reflect the real physical hardware on the bench:
+
+### 2.1 Mechanical Chassis, Traction & Power
+- **Motors & Drive:** 4x cylindrical geared DC motors **JGA16-050** (16 mm diameter, 3 mm steel D-shaft; **not N20 micromotors**) driven in left/right pairs by a dual MOSFET **TB6612FNG** H-bridge.
+- **Wheels & Ground Clearance (Upgraded):** Mounted **32 mm outer-diameter wheels** with outward hubs (all motor housing kept internal). Real ground clearance under the motors:
+  $$\text{Wheel Radius (16 mm)} - \text{JGA16-050 Radius (8 mm)} = \mathbf{8.0\text{ mm}}$$
+  *(Resolved the critical 3.0 mm clearance limitation of earlier 22 mm StickyMAX wheels.)*
+- **Power Subsystem:** `2S 7.4V 2500mAh` Li-Ion battery pack (8.4V full charge) with integrated BMS feeding motor `VM` directly and a **Mini 560 Step-Down** regulator (`5.0V` regulated, up to `5A`) powering electronics and servos.
+- **Head Kinematics (Pan/Tilt):** 2x **SG90 9g** micro servos (Pan at base, Tilt on moving bracket carrying the **ESP32-S3-CAM N16R8** directly so the short fragile camera FPC ribbon never twists).
+
+### 2.2 Critical Bench Engineering Diagnostics Resolved on V1
+1. **ATmega328P Brown-Out Reset Prevention:** Instant 0–100% PWM startup/reversal across 4 motors caused voltage sag below the ATmega328P `4.3V` BOD threshold. Solved in firmware (`nano_motores.h`) with an 800 ms soft-start PWM ramp and mandatory **150 ms reversal dead-time**, cutting inrush current spikes by over 70%.
+2. **Elimination of SG90 "Rebolado" (Pendulum Stick-Slip):** Integer-degree `servo.write()` commands at slow speeds caused ~10–20 µs jumps across plastic bushings. Solved (`nano_servos.h`) with **50 Hz (20 ms) microsecond interpolation** (`544–2400 µs` = 1,856 steps), trapezoidal acceleration, minimum anti-stiction velocity, backlash compensation, and pure Hardware Timer1 Fast PWM mode 14 (`D9/OC1A`, `D10/OC1B`).
+3. **OV5640 Thermal Control in Software:** Rather than mounting noisy mechanical fans on the Pan/Tilt head, `OV5640` dissipation is controlled via SCCB register `0x3008 = 0x42` (soft sleep < 1 mA after 3 s idle, waking in ~40 ms via `0x3008 = 0x02`), adaptive `XCLK` (`8–12 MHz`), and FreeRTOS Core 0 isolation — maintaining ~33–35 °C in continuous streaming tests.
+4. **Serial Bridge Polarity (`V1`):** `ESP32 IO43 -> BC337 -> Nano D0` NPN inverter is compensated via ESP32 hardware UART2 inversion (`Serial2.begin(9600, SERIAL_8N1, PIN_RX, PIN_TX, true)`), delivering clean non-inverted `5V` idle / `0V` pulse logic to `D0`.
+
+### 2.3 Transition from V1 (Perfboard + Nano) to PCB V2 (`rover_pcb_v2_chassi`)
+- **Current Bench Status (V1):** Physically assembled 4WD prototype chassis (3D-printed ABS, perfboard with `ESP32-S3-CAM` + `Arduino Nano V3`). **No further perfboards will be built.**
+- **Designed Next Generation (V2 Single-Sided PCB `rover_pcb_v2_chassi`):**
+  - **Board Geometry:** `85.0 × 65.0 mm` (~60% area reduction vs. `90 × 150 mm` perfboard), 4x M3 mounting holes at `77 × 57 mm`, single-sided routing + ground plane strictly on `B.Cu` (empty `F.Cu` Gerber) with 6 top-side insulated wire jumpers (`JP1–JP6`) and 4 THT decoupling capacitors (`C1` 470 µF 16V on `+5V`, `C2` 470 µF 25V on `VCC_BAT`, `C3` 100 nF on `VBAT-SENSE`, `C4` 100 nF on `+3V3`). Verified in KiCad 10 with **0 DRC, 0 ERC, and 0 schematic-PCB parity errors** (pending fabrication).
+  - **Controller Migration (`Nano V3` → 30-pin `ESP32 DevKit V1`):**
+    - **Head ↔ Chassis Link:** Dedicated **3.3V direct hardware UART** over 4-pin connector `J2` (`1=GND`, `2=+5V`, `3=CAM-TX` on `U1.6/RX2/GPIO16`, `4=CAM-RX` on `U1.15/GPIO23`). **ESP-NOW was explicitly rejected** to prevent 2.4 GHz radio contention with continuous high-rate UDP video packets on the `ESP32-S3-CAM`.
+    - **Chassis Pinout Summary (`U1`):** `TB6612FNG` (`D32/33/25/26/27/14` + `STBY=D13`, `D12` NC), Servos (`D18/D19`), `I2S` Digital Audio (**`INMP441`** mic + external **`MAX98357A`** 3W amp on `WS=D15, BCLK=D5, DOUT=D17, DIN=D35`), External `I2C` (`SSD1306` OLED `J9` + auxiliary `J10–J12` on `SDA=D21, SCL=D22`), remote `DS18B20` (`D4`), 2S battery ADC (`D34`), and `WS2812B` RGB strip (`D2`).
+  - **2nd Purchase Closure & AI Testing Impact:** FlySky receiver, 3W headlight, and thermal pad were permanently cut. `INMP441` + `MAX98357A` remain to be mounted physically with V2. **Therefore, V1 voice/listening tests in `PETeleco` begin using the host PC microphone and speakers**, and because V1/V2 have **no ToF/ultrasonic distance sensor**, forward obstacle proximity still relies strictly on the Pan/Tilt camera.
 
 ---
 
-## 4. Histórico Técnico & Benchmarks Verificados
+## 3. Embodied Transport & Computer Vision Stack (Validated in `CaioHVectorA/Rover`)
 
-### 14/11/2026 — Implantação da Camada 2 (Roteador SystemOne `tev1:0.8b`) e Criação do Repositório `PETeleco`
+| Subsystem | Module (`Rover`) | Technical Specification & Observed Performance |
+|---|---|---|
+| **Zero-Delay UDP Video** | `tools/zero_delay_udp.py` / `poc_udp_camera` | UDP **Port `5005`**, magic `0x52565231` (`'RVR1'`), 16-byte `<IHHHHI` header, `HELLO` auto-discovery (self-echo ignored), RTT `P` ping, background socket drainer (`0`-frame queue, **< 45 ms** latency). Measured **22.5 FPS continuous in VGA 640×480** (`2.65–2.77 Mbps`, **0.0% packet drop**), PSRAM DMA support up to **5 MP QSXGA (`2560×1920`)** with micro-paced bursts. |
+| **Pan/Tilt Control Law** | `PanTiltTracker` (`zero_delay_udp.py`) | Converts pixel error via `~0.095 °/px` (FOV estimate), commands absolute target with latency dead-time (`wait_until = now + latency + |real|/speed + 40 ms`), IIR low-pass angular velocity filter + conditional lead, adaptive servo speed (`25–130 °/s`). Fixed critical bug on 12/11/2026 where `<S,...>` expects **tenths of degrees** (`90.0°` → `<S,900,900,0>`). |
+| **Serial Actuation Frame** | `rover_protocolo.h` | Short ASCII frames `<C,a,b,c>`: `<P,n>`/`<A,n>`, `<S,pan10,tilt10[,vel10]>`, `<M,esq,dir>` (`-255..255`), `<X>` emergency stop, `<B,mV,minmV>`, `<H,up_s,rx,err>`, `<L,estado>`, `<C,id,valor>`. |
+| **Biometric Face ID** | `tools/reconhecimento_facial.py` | OpenCV DNN **YuNet** (`face_detection_yunet_2023mar.onnx`, 232 KB; ~4 ms VGA, **16–19 ms** in 5 MP photos via `<=960 px` proxy scale) + `alignCrop()` + **SFace** (`face_recognition_sface_2021dec.onnx`, 38.6 MB, `128-D` float32 embedding, cosine threshold `0.363` against `known_faces.json`). Initializes in XGA (`1024×768`) up to 5 MP. Replaced legacy `rover_radar_vip.py`. |
+| **Object Navigation FSM** | `tools/rover_trekking.py` | **YOLOv8n** ONNX with aspect-ratio `_letterbox(640, 640)` (avoided 33% distortion on vertical 480×640 camera orientation), target grouping (`bottle`, `cup`, `wine glass`, `vase`), calibrated thresholds (`0.28` acquire / `0.18` hold), live selectors `[A]`, `[O]`, `[D]`. 6-state FSM: `STANDBY` → `RADAR_SCAN` → `TARGET_LOCKED` → `ALIGN` → `APPROACH` → `ORBIT`. |
+| **Hand Gestures** | `tools/rover_vision_suite.py` | Migrated to MediaPipe Tasks **`HandLandmarker`** (`hand_landmarker.task`, 7.8 MB, 21 3D landmarks) because `mediapipe 1.2.3` dropped `mp.solutions`. Tuned with `700 ms` hand-loss timeout and `4.5s` continuous-command ceiling. |
+| **Async Cloud Co-Pilot** | `GeminiVisionClient` | Background worker calling **`gemini-3.5-flash`**, resizing JPEG frame (`<=480 px` qual `72` in shared utility; `320×240` `<12 KB` payload, `<100 ms` upload, `15s` timeout in Trekking) without stalling video or motor loops. |
 
-- **Configuração de Inferência Local (RTX 3050 OEM 8 GB VRAM):**
-  - Instalado Ollama portátil **v0.40.16** em `C:\Ollama` com o modelo **`tev1:0.8b`** (`772.85M` parâmetros, arquitetura `qwen35`, quantização `Q8_0`, ~`784,5 MiB` em disco).
-  - **Comparativo Vulkan vs CUDA no Windows:** Sem configuração explícita, o `ollama serve` no Windows iniciava com backend Vulkan, consumindo `14.193,6 ms` na primeira chamada para compilação de shaders (`p50 = 297,9 ms`, `p95 = 321,18 ms` com 6 perguntas no benchmark preliminar). Ao definir **`OLLAMA_VULKAN=0`**, o servidor passou a operar nativamente em **`CUDA0`** (`Flash Attention`, `keep_alive=-1`). Em CUDA no Windows, a carga fria pós-boot leva ~27–45 s porque o Ollama desativa `mmap` (`reason=windows_cuda`), mas mantém o modelo residente em **`1245,7 MiB` de VRAM** (`/api/ps`).
-- **Benchmark Isolado da Camada 2 (36 frases PT-BR: 20 padrão + 16 inéditas de generalização, 2 rodadas warm = 72 inferências):**
-  - **Escopo estrito do teste:** Avaliação de texto + contexto simulado de estado/SFace/YOLO direto via HTTP `POST /v1/systemone` (sem microfone/STT, TTS ou chassi físico conectado).
-  - **Cold-start (com modelo já residente):** `496,1 ms`.
-  - **Latência warm (`n = 72`, 7 perguntas paralelas):** `min = 306,21 ms` | `média = 352,85 ms` | **`p50 = 352,54 ms`** | **`p95 = 376,05 ms`** | `max = 491,71 ms`.
-  - **Acurácia observada:**
-    - Rota principal: **`36/36 (100,0%)`** (`20/20` padrão + `16/16` generalização inédita).
-    - Subtipo específico: **`31/31 (100,0%)`** *(excluindo os 5 casos `ignorar` sem subtipo esperado)*.
-    - Detecção de necessidade de imagem (`precisa_imagem_camera`): **`34/34 (100,0%)`**.
-    - Economia de chamadas em nuvem: **`30/36 (83,3%)`** resolvidos localmente sem acionar a API do Gemini.
-    - Trava de segurança motora verificada nos testes: comandos intermediários (`acao_seguir = 0,55` e `acao_ir_objeto = 0,50`) acionaram `[CONFIRMAR]` por ficarem abaixo do limiar `0,80`, enquanto `parar` explícito (`0,98`), `radar` (`0,84`) e `gen_acao_1..4` (`0,87`–`1,00`) passaram diretamente.
-- **Separação oficial do repositório `PetEletricaUFF/PETeleco`:** Criada a base documental bilíngue (EN / PT-BR) e migrado o roteador + suíte de benchmark para [`src/router_systemone.py`](../src/router_systemone.py) e [`src/benchmark_router.py`](../src/benchmark_router.py).
+---
+
+## 4. Host Inference Machine & 5-Layer Cognitive Architecture (`PETeleco`)
+
+- **Host Server Specs:** Dell Inc. XPS 8960 | Windows 11 Home 64-bit | Intel Core i5-14600 (14C/20T) | 16 GB DDR5-5600 | **NVIDIA GeForce RTX 3050 OEM (8 GB VRAM)** | Python `3.12.10` | `torch 2.6.0+cu124`.
+- **Resident VRAM Budget Target (`<= 8 GB`, aiming ~2.5–3.0 GB total):**
+  - Layer 1 (Planned): `Silero VAD` (CPU) + `faster-whisper` (`base` or `small`, CUDA `~0.5–1.0 GB` VRAM).
+  - Layer 2 (Implemented): Ollama `/v1/systemone` + **`tev1:0.8b`** (`772.85M`, `Q8_0`, `qwen35`, **`1245.7 MiB` VRAM** resident).
+  - Layer 3 (Hybrid): `Piper TTS` (CPU `0 GB` VRAM) + canned `.wav` persona clips (`0 ms` TTS) + OpenCV ONNX vision (`YuNet`, `SFace`, `YOLOv8n`) + `SQLite` / `JSON` per-face biographical memory.
+  - Layer 4 (On-Demand): `Gemini` multimodal REST client (triggered only when Layer 2 selects `cognicao_gemini`).
+
+---
+
+## 5. Chronological AI Log & Benchmark Progression (`PETeleco`)
+
+### 14/11/2026 — Infrastructure Setup, Vulkan vs. CUDA Diagnosis, Router Calibration & Repo Creation
+
+1. **Portable Runtime Setup:**
+   - Installed portable **Ollama v0.40.16** to `C:\Ollama` (added to Windows User `PATH`) and pulled **`tev1:0.8b`** (`784.52 MiB` GGUF Q8_0, `772.85M` params).
+   - Verified `winget`, `choco`, `scoop`, `tailscale`, `cloudflared`, and `ngrok` are absent on the host PC; `curl.exe` and `ssh.exe` are present.
+2. **Backend Discovery — Windows Vulkan vs. CUDA:**
+   - Initial `ollama serve` defaulted to `OLLAMA_VULKAN=true`, spending **`14,193.6 ms`** compiling Vulkan shaders on the first call (warm preliminary 6-question runs measured `min=276.34 ms`, `mean=301.58 ms`, `p50=297.9 ms`, `p95=321.18 ms`, `max=444.45 ms`, `10/20 (50.0%)` route accuracy before prompt tuning).
+   - Killing Vulkan and launching with **`OLLAMA_VULKAN=0`** switched inference to native **`CUDA0`** (`ggml-cuda.dll`, `Flash Attention enabled`, `USE_GRAPHS=1`, `keep_alive=-1`).
+   - Windows CUDA loads `tev1:0.8b` in ~27–45 s on cold start after daemon boot because Ollama disables `mmap` on `windows_cuda`, consuming **`1245.7 MiB`** in `/api/ps` (`+1333 MiB` `nvidia-smi` delta observed at initial cold load). Once loaded, calls remain consistently warm (~353 ms).
+3. **Iterative Layer 2 Router Calibration (`src/router_systemone.py`):**
+   - Built decoupled `RoteadorSystemOne` (`POST /v1/systemone`) and 36-case PT-BR benchmark (`20` standard + `16` unseen out-of-sample generalization phrases with zero keyword leakage):
+     - *Baseline CUDA (v1 prompts, 20 cases):* `p50=270.29 ms`, `p95=283.71 ms`, Route `10/20 (50.0%)`.
+     - *v3 (20 cases):* `p50=354.94 ms`, Route `20/20 (100.0%)`, Subtype `17/17 (100.0%)`, Image `19/19 (100.0%)`.
+     - *v4 (36 cases, stripped keyword hints):* `p50=339.74 ms`, Route `26/36 (72.2%)`, Image `33/34 (97.1%)` — exposed unsafe `else "radar"` fallback when `acao_rover` returned `nenhuma`.
+     - *v5 (36 cases, removed `else "radar"`):* Route `17/36 (47.2%)`, Noise `5/5 (100%)` — `dirigido_ao_robo` criteria over-penalized normal questions.
+     - *v6 (36 cases):* `p50=335.5 ms`, `p95=372.43 ms`, Route `28/36 (77.8%)`, Subtype `23/31 (74.2%)`, Image `34/34 (100.0%)` — root-caused overlap between `pool_fala_pronta` and factual questions in `rota_principal`, plus narrow `seguimento` / `elogio` phrasing.
+     - ***v7 Final Verified (`--suite todas --rodadas 2`, `n=72` warm inferences):***
+       - Cold-start (resident): `496.1 ms`
+       - Warm latency: `min = 306.21 ms` | `mean = 352.85 ms` | **`p50 = 352.54 ms`** | **`p95 = 376.05 ms`** | `max = 491.71 ms`
+       - Route accuracy: **`36/36 (100.0%)`** (`20/20` standard + `16/16` out-of-sample generalization)
+       - Subtype accuracy: **`31/31 (100.0%)`** *(5 noise cases have no subtype)*
+       - Camera-need accuracy: **`34/34 (100.0%)`**
+       - Cloud API savings (resolved locally): **`30/36 (83.3%)`**
+       - Safety interlock verification: `acao_seguir` (`0.55`) and `acao_ir_objeto` (`0.50`) triggered `[CONFIRMAR]` (`< 0.80`), while explicit `parar` (`0.98`), `radar` (`0.84`), and unseen `gen_acao_1..4` (`0.87–1.00`) executed directly.
+   - *Strict Scope Disclaimer:* Benchmarked on isolated PT-BR text + simulated sensor context only (no live microphone/STT, TTS, or physical chassis motors attached yet).
+4. **Remote Port Exposure Assessment:**
+   - Evaluated remote testing options while operating via Remote Control: exposing raw Ollama port `11434` is unsafe (no auth). Authenticated HTTPS tunnels (requiring installing `cloudflared` or `tailscale`) work well for lightweight text/JSON Jev router evaluation, whereas remote browser microphone streaming for Layer 1 STT distorts latency measurements and triggers browser HTTPS/driver friction — audio/hardware loops are best tested locally on the host PC.
+5. **Creation of `PetEletricaUFF/PETeleco`:**
+   - Dedicated public GitHub repository initialized and pushed (`main`, keeping `CaioHVectorA/Rover` untouched and evolving in parallel) with bilingual documentation (`EN` + `PT-BR`) and modular Layer 2 Python package (`src/router_systemone.py`, `src/benchmark_router.py`).
+
+---
+
+## 6. Roadmap (Next Steps)
+
+1. **Layer 1 (`Silero VAD` + `faster-whisper` CUDA):** Implement local host microphone capture and low-latency PT-BR speech transcription pipeline feeding `ContextoRover`.
+2. **Layer 3 Persona, Deterministic Handlers & Memory:** Build PETeleco canned `.wav` response pools, deterministic local handlers (`hora_atual`, cached `previsao_clima`, telemetry `bateria_temp`, `quem_vejo_agora`), local `Piper TTS` synthesis, and SQLite/JSON conversation memory indexed by `SFace` identity.
+3. **Layer 4 + Embodied Integration:** Wire async `Gemini` vision/chat escalation and live UDP/serial command dispatch to the shared `Rover` body (and V2 `I2S`/`OLED` hardware once fabricated).

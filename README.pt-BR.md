@@ -132,10 +132,12 @@ Medido em **Windows 11 / RTX 3050 OEM (8 GB VRAM) / Ollama v0.40.16 (`OLLAMA_VUL
 PETeleco/
 ├── README.md                   # Documentação em Inglês
 ├── README.pt-BR.md             # Documentação em Português (BR)
-├── AGENTS.md                   # Diretrizes para agentes & contexto paralelo com Rover
+├── AGENTS.md                   # Diretrizes para agentes & contexto paralelo (EN)
+├── AGENTS.pt-BR.md             # Diretrizes para agentes & contexto paralelo (PT-BR)
 ├── requirements.txt            # Dependências mínimas (`requests` para C2)
 ├── docs/
-│   ├── context.md              # Memória técnica contínua e restrições físicas
+│   ├── context.md              # Memória técnica contínua e restrições físicas (EN)
+│   ├── context.pt-BR.md        # Memória técnica contínua e restrições físicas (PT-BR)
 │   ├── ARCHITECTURE.md         # Protocolos, travas e modelos (Inglês)
 │   └── ARCHITECTURE.pt-BR.md   # Protocolos, travas e modelos (Português-BR)
 └── src/
