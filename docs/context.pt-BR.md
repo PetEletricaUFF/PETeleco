@@ -106,11 +106,17 @@ Mesmo mantendo CAD e firmwares no `Rover`, toda decisão de IA e protocolo no `P
    - Concluído que abrir a porta `11434` do Ollama diretamente é inseguro (sem autenticação). Túneis HTTPS autenticados (baixando `cloudflared` ou `tailscale`) funcionam bem para testes leves de texto no Roteador Jev, mas áudio em tempo real (STT/microfone) remoto sofre com RTT de rede, HTTPS `getUserMedia` e drivers, sendo melhor validado presencialmente no PC.
 5. **Criação do Repositório `PetEletricaUFF/PETeleco`:**
    - Inicializado e publicado em paralelo ao `CaioHVectorA/Rover` com documentação bilíngue (EN / PT-BR) e código inicial da Camada 2 (`src/router_systemone.py` e `src/benchmark_router.py`).
+6. **Bancada Interativa Completa, TTS Offline (`Piper`) & Portabilidade Linux CPU (14/11/2026):**
+   - Implementados e validados no notebook de desenvolvimento (**Linux / AMD Ryzen 7 5700U / 30 GB RAM / Ollama `v0.40.16` CPU**, sem GPU NVIDIA), preservando 100% de compatibilidade com **Windows / RTX 3050 CUDA**:
+     - **Ollama CPU vs. Vulkan Renoir em Linux:** Confirmado que `OLLAMA_IGPU_ENABLE=1` (Vulkan `AMD RADV RENOIR`, `compute=0.0`) trava indefinidamente após `load_tensors`; execução limpa em CPU concluiu `--suite padrao --rodadas 1` (`n=20`) com `cold = 8868,1 ms`, warm `min = 6341,74 ms` | `média = 9217,45 ms` | **`p50 = 9734,7 ms`** | **`p95 = 10678,57 ms`** | `max = 12256,82 ms`, mantendo Rota **`20/20 (100,0%)`**, Subtipo **`17/17 (100,0%)`** e Imagem **`19/19 (100,0%)`**.
+     - **Áudio & STT adaptativo (`src/escuta_stt.py`):** Reamostragem automática para `16 kHz` caso o dispositivo de captura não suporte `16000 Hz` nativo, callbacks para HUD (`on_speech_start`), perfil automático de Whisper (`small` em CUDA / `base` em CPU — transcrição warm `~1,1–2,3 s` em CPU e `~3,1 s` com `small`) e fallback `torchaudio_192d` na CPU (`~83 ms`).
+     - **TTS Offline Cross-Platform (`src/tts_local.py`):** Download automático e síntese offline em CPU com **`Piper TTS`** (`pt_BR-faber-medium`, `~262 ms` por ~4,3 s de fala) via `sounddevice` / `paplay` / `pw-play` / `aplay`, com fallbacks para SAPI (Windows) e `espeak-ng`/`spd-say`.
+     - **Webcam ao Vivo + HUD (`src/visao_webcam.py` & `src/testar_peteleco.py`):** Captura persistente thread-safe `WebcamLive` com detecção `YuNet + SFace` (`~10,8 ms`/frame), janela HUD opcional (`--preview` / `/preview`), cadastro rápido de rosto (`/rosto <nome>`) e modo contínuo mãos-livres (`--continuo` / `/continuo`) com `.env.example` documentando variáveis opcionais (`GEMINI_API_KEY`).
 
 ---
 
 ## 6. Próximos Passos Planejados
 
-1. **Camada 1 (`Silero VAD` + `faster-whisper` em CUDA):** Implementar captura contínua pelo microfone do PC e transcrição PT-BR de baixa latência alimentando `ContextoRover`.
-2. **Camada 3 (Persona, Handlers & Memória):** Montar pool de `.wav` com a voz/persona do PETeleco, handlers determinísticos (`hora_atual`, cache `previsao_clima`, `bateria_temp`, `quem_vejo_agora`), síntese local `Piper TTS` e banco `SQLite`/`JSON` por rosto.
-3. **Camada 4 + Ponte Física:** Integrar escalonamento multimodal `Gemini` e enviar comandos confirmados para o corpo físico (`Rover` UDP/serial + V2 `I2S`/`OLED` quando montada).
+1. **Calibração do Pool Vocal da Persona:** Gravar amostras reais da equipe no `PET` (`/rosto` + `/voz`) e ajustar o pool opcional de `.wav` expressivos do `PETeleco` em complemento ao `Piper TTS`.
+2. **Silero VAD Opcional em Ambiente Ruidoso:** Avaliar substituição/reforço do gate RMS atual em `src/escuta_stt.py` pelo `Silero VAD` caso o laboratório tenha conversas paralelas constantes.
+3. **Ponte Física com `Rover` (UDP + Serial `<C,a,b,c>`):** Conectar decisões aprovadas pelo Roteador Jev e travas corporais ao fluxo UDP (`porta 5005`) e comandos do chassi (`Rover` V1 -> V2 `I2S`/`OLED` quando fabricada).

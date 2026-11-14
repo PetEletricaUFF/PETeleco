@@ -13,14 +13,16 @@ Ordem de transcricao:
 import base64
 from collections import deque
 import io
+import threading
 import time
-from typing import Any, List, Optional, Tuple
+from typing import Any, Callable, List, Optional, Tuple
 import wave
 
 import numpy as np
 import requests
 import sounddevice as sd
 import torch
+import torchaudio
 
 from src.memoria_pessoas import carregar_env
 
@@ -64,18 +66,38 @@ class EscutaSTT:
             if int(d.get("max_input_channels", 0)) > 0
         ]
 
+    def _resolver_sample_rate_entrada(self) -> int:
+        """Usa 16 kHz se o dispositivo aceitar; caso contrario, usa o default_samplerate do hardware."""
+        try:
+            sd.check_input_settings(device=self.device_index, samplerate=self.sample_rate, channels=1)
+            return self.sample_rate
+        except Exception:
+            try:
+                info = sd.query_devices(self.device_index, kind="input")
+                return max(8000, int(round(float(info.get("default_samplerate", 48000)))))
+            except Exception:
+                return self.sample_rate
+
+    def _reamostrar_para_alvo(self, audio_np: np.ndarray, sr_origem: int) -> np.ndarray:
+        if sr_origem == self.sample_rate or audio_np.size == 0:
+            return audio_np.astype(np.float32)
+        wav = torch.from_numpy(audio_np.astype(np.float32)).unsqueeze(0)
+        wav_rs = torchaudio.functional.resample(wav, sr_origem, self.sample_rate)
+        return wav_rs.squeeze(0).numpy().astype(np.float32)
+
     def gravar_duracao_fixa(self, segundos: float = 4.0) -> np.ndarray:
         """Grava janela fixa do microfone padrao (util para cadastro de voz `/voz`)."""
-        n_amostras = max(1, int(self.sample_rate * segundos))
+        sr_cap = self._resolver_sample_rate_entrada()
+        n_amostras = max(1, int(sr_cap * segundos))
         gravacao = sd.rec(
             n_amostras,
-            samplerate=self.sample_rate,
+            samplerate=sr_cap,
             channels=1,
             dtype="float32",
             device=self.device_index,
         )
         sd.wait()
-        return gravacao.reshape(-1)
+        return self._reamostrar_para_alvo(gravacao.reshape(-1), sr_cap)
 
     def gravar_microfone(
         self,
@@ -83,14 +105,17 @@ class EscutaSTT:
         silencio_fim_s: float = 1.2,
         timeout_espera_s: float = 7.0,
         limiar_rms: float = 0.015,
+        stop_event: Optional[threading.Event] = None,
+        on_speech_start: Optional[Callable[[], None]] = None,
     ) -> np.ndarray:
         """
         Escuta o microfone, espera o inicio da fala e para no silencio pos-fala.
 
         Mantem um pre-roll de 350 ms para nao cortar a primeira silaba.
         """
+        sr_cap = self._resolver_sample_rate_entrada()
         bloco_ms = 50
-        bloco_amostras = int(self.sample_rate * (bloco_ms / 1000.0))
+        bloco_amostras = int(sr_cap * (bloco_ms / 1000.0))
         pre_roll = deque(maxlen=max(1, int(350 / bloco_ms)))
         blocos_gravados: List[np.ndarray] = []
 
@@ -99,13 +124,15 @@ class EscutaSTT:
         t_ultima_fala = t_inicio
 
         with sd.InputStream(
-            samplerate=self.sample_rate,
+            samplerate=sr_cap,
             channels=1,
             dtype="float32",
             blocksize=bloco_amostras,
             device=self.device_index,
         ) as stream:
             while True:
+                if stop_event is not None and stop_event.is_set():
+                    break
                 bloco, _ = stream.read(bloco_amostras)
                 bloco_1d = bloco.reshape(-1).copy()
                 rms = float(np.sqrt(np.mean(bloco_1d * bloco_1d) + 1e-9))
@@ -117,6 +144,8 @@ class EscutaSTT:
                         falando = True
                         t_ultima_fala = agora
                         blocos_gravados.extend(pre_roll)
+                        if on_speech_start is not None:
+                            on_speech_start()
                     elif (agora - t_inicio) >= timeout_espera_s:
                         return np.zeros(0, dtype=np.float32)
                 else:
@@ -130,7 +159,7 @@ class EscutaSTT:
 
         if not blocos_gravados:
             return np.zeros(0, dtype=np.float32)
-        return np.concatenate(blocos_gravados).astype(np.float32)
+        return self._reamostrar_para_alvo(np.concatenate(blocos_gravados), sr_cap)
 
     def construir_initial_prompt(self) -> str:
         base = [
@@ -150,6 +179,7 @@ class EscutaSTT:
             return self._whisper_model
 
         tentativas = [("cuda", "float16"), ("cpu", "int8")] if torch.cuda.is_available() else [("cpu", "int8")]
+        ultimo_erro = ""
         for device, compute_type in tentativas:
             try:
                 self._whisper_model = WhisperModel(
@@ -159,8 +189,11 @@ class EscutaSTT:
                 )
                 self._whisper_device_label = f"faster-whisper({self.whisper_model_size}/{device})"
                 return self._whisper_model
-            except Exception:
+            except Exception as exc:
+                ultimo_erro = str(exc)
                 self._whisper_model = None
+        if ultimo_erro:
+            print(f"[AVISO STT] Falha ao carregar faster-whisper ({ultimo_erro}); usando fallback.")
         self._whisper_falhou = True
         return None
 
@@ -230,6 +263,8 @@ class EscutaSTT:
             self._env.get("GEMINI_MODEL", ""),
             "gemini-3.5-flash",
             "gemini-3.1-flash-lite",
+            "gemini-2.5-flash-lite",
+            "gemini-2.5-flash",
         ):
             m = cand.strip()
             if m and m not in modelos:

@@ -106,11 +106,17 @@ Even though CAD/firmware files remain in `Rover`, PETeleco's AI protocols and co
    - Evaluated remote testing options while operating via Remote Control: exposing raw Ollama port `11434` is unsafe (no auth). Authenticated HTTPS tunnels (requiring installing `cloudflared` or `tailscale`) work well for lightweight text/JSON Jev router evaluation, whereas remote browser microphone streaming for Layer 1 STT distorts latency measurements and triggers browser HTTPS/driver friction — audio/hardware loops are best tested locally on the host PC.
 5. **Creation of `PetEletricaUFF/PETeleco`:**
    - Dedicated public GitHub repository initialized and pushed (`main`, keeping `CaioHVectorA/Rover` untouched and evolving in parallel) with bilingual documentation (`EN` + `PT-BR`) and modular Layer 2 Python package (`src/router_systemone.py`, `src/benchmark_router.py`).
+6. **Full Interactive Workbench, Offline `Piper` TTS & Linux CPU Portability (2026-11-14):**
+   - Implemented and verified end-to-end on the personal Linux laptop (**AMD Ryzen 7 5700U / 30 GB RAM / Ollama `v0.40.16` CPU**, no NVIDIA GPU), keeping full compatibility with **Windows / RTX 3050 CUDA**:
+     - **Ollama CPU vs. Renoir Vulkan on Linux:** Confirmed `OLLAMA_IGPU_ENABLE=1` (Vulkan `AMD RADV RENOIR`, `compute=0.0`) hangs indefinitely after `load_tensors`; clean CPU execution completed `--suite padrao --rodadas 1` (`n=20`) with `cold = 8868.1 ms`, warm `min = 6341.74 ms` | `mean = 9217.45 ms` | **`p50 = 9734.7 ms`** | **`p95 = 10678.57 ms`** | `max = 12256.82 ms`, preserving Route **`20/20 (100.0%)`**, Subtype **`17/17 (100.0%)`**, and Image **`19/19 (100.0%)`**.
+     - **Adaptive Audio & STT (`src/escuta_stt.py`):** Automatic sample-rate negotiation & resampling to `16 kHz` when hardware rejects native `16000 Hz`, speech-start callbacks for the HUD, automatic Whisper sizing (`small` on CUDA / `base` on CPU — warm transcription `~1.1–2.3 s` vs `~3.1 s` for `small`), and CPU `torchaudio_192d` voiceprint extraction (`~83 ms`).
+     - **Cross-Platform Offline TTS (`src/tts_local.py`):** Automatic download and CPU synthesis via **`Piper TTS`** (`pt_BR-faber-medium`, `~262 ms` for ~4.3 s speech) over `sounddevice` / `paplay` / `pw-play` / `aplay`, with Windows SAPI and `espeak-ng`/`spd-say` fallbacks.
+     - **Live Webcam + HUD (`src/visao_webcam.py` & `src/testar_peteleco.py`):** Thread-safe persistent `WebcamLive` capture running `YuNet + SFace` (`~10.8 ms`/frame), optional HUD preview (`--preview` / `/preview`), quick webcam face enrollment (`/rosto <name>`), hands-free continuous loop (`--continuo` / `/continuo`), and `.env.example` documenting optional keys (`GEMINI_API_KEY`).
 
 ---
 
 ## 6. Roadmap (Next Steps)
 
-1. **Layer 1 (`Silero VAD` + `faster-whisper` CUDA):** Implement local host microphone capture and low-latency PT-BR speech transcription pipeline feeding `ContextoRover`.
-2. **Layer 3 Persona, Deterministic Handlers & Memory:** Build PETeleco canned `.wav` response pools, deterministic local handlers (`hora_atual`, cached `previsao_clima`, telemetry `bateria_temp`, `quem_vejo_agora`), local `Piper TTS` synthesis, and SQLite/JSON conversation memory indexed by `SFace` identity.
-3. **Layer 4 + Embodied Integration:** Wire async `Gemini` vision/chat escalation and live UDP/serial command dispatch to the shared `Rover` body (and V2 `I2S`/`OLED` hardware once fabricated).
+1. **Voice & Persona Audio Calibration:** Enroll PET lab members (`/rosto` + `/voz`) and record custom expressive PETeleco `.wav` clips to complement `Piper TTS`.
+2. **Optional `Silero VAD` Upgrade for Noisy Labs:** Evaluate upgrading the current RMS VAD gate in `src/escuta_stt.py` with `Silero VAD` if lab background chatter triggers false captures.
+3. **Embodied `Rover` Bridge (UDP + Serial `<C,a,b,c>`):** Dispatch safety-gated Jev decisions and surface interlocks over the live `Rover` UDP stream (`port 5005`) and chassis firmware (`Rover` V1 -> V2 `I2S`/`OLED` once fabricated).

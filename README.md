@@ -87,14 +87,13 @@ Designed to keep **all active local models resident inside 8 GB VRAM** (host tar
 
 | Layer | Component / Model | Role | Host / Runtime | Status |
 |---|---|---|---|---|
-| **L1 (Audio)** | `Silero VAD` | Cuts silence before STT runs | CPU / Local Python | Planned |
-| **L1 (Audio)** | `faster-whisper` (`base` / `small`) | Continuous PT-BR speech-to-text | GPU CUDA (`~0.5–1.0 GB` VRAM) | Planned |
-| **L2 (Router)** | **`tev1:0.8b`** (`772.85M`, `Q8_0`, `qwen35`) | Parallel `noul`/`choice` routing via `/v1/systemone` | Ollama CUDA (`1245.7 MiB` VRAM) | **✅ Implemented & Benchmarked** |
-| **L3 (Speech)** | `Piper TTS` + Persona `.wav` pool | Expressive local PT-BR voice synthesis | CPU (`~0 GB` VRAM) | Planned |
-| **L3 (Vision)** | `YuNet` + `SFace` (ONNX, `128-D`) | Face detection & biometric identification (`cosine >= 0.363`) | Local OpenCV ONNX | Validated in `Rover` |
+| **L1 (Audio)** | `RMS VAD` + `faster-whisper` (`small` CUDA / `base` CPU) | Continuous PT-BR transcription + `torchaudio_192d` voice ID | CPU / GPU CUDA (`auto`) | **✅ Implemented & Tested** |
+| **L2 (Router)** | **`tev1:0.8b`** (`772.85M`, `Q8_0`, `qwen35`) | Parallel `noul`/`choice` routing via `/v1/systemone` | Ollama CUDA (`1245.7 MiB`) or CPU | **✅ Implemented & Benchmarked** |
+| **L3 (Speech)** | **`Piper TTS`** (`pt_BR-faber-medium`) + OS fallback | Offline PT-BR voice synthesis via `sounddevice` / Pulse / ALSA | CPU (`~0 GB` VRAM) | **✅ Implemented & Tested** |
+| **L3 (Vision)** | `YuNet` + `SFace` (ONNX, `128-D`) + `WebcamLive` HUD | Face biometric ID (`cosine >= 0.363`) & live `--preview` HUD | Local OpenCV ONNX | **✅ Implemented (`Rover` + `PETeleco`)** |
 | **L3 (Vision)** | `YOLOv8n` + `MediaPipe Hands` | Object detection, trekking FSM & gestures | Local Python / ONNX | Validated in `Rover` |
-| **L3 (Memory)** | `SQLite` / `JSON` Memory Store | Stores conversation summaries per recognized face | Local Disk | Planned |
-| **L4 (Cloud)** | `Gemini` (`gemini-3.5-flash` baseline) | Open conceptual reasoning & camera `Image-to-Text` | Async HTTPS REST API | Async client validated in `Rover` |
+| **L3 (Memory)** | 3-Tier `SQLite` / `JSON` Store | Hot profile cards & episodic logs per recognized person | Local Disk (`data/`) | **✅ Implemented & Tested** |
+| **L4 (Cloud)** | `Gemini REST` + Ollama `/api/chat` fallback | Scene `Image-to-Text` & open chat with physical safety locks | HTTPS REST API / local | **✅ Implemented (`GEMINI_API_KEY` optional)** |
 
 ---
 
@@ -121,7 +120,7 @@ Measured on **Windows 11 / RTX 3050 OEM (8 GB VRAM) / Ollama v0.40.16 (`OLLAMA_V
 | **Camera-Need Detection (`precisa_imagem_camera`)** | **`34 / 34 (100.0%)`** |
 | **Resolved Locally (Cloud API Savings)** | **`30 / 36 (83.3%)`** handled without calling Gemini |
 
-> **Scope note:** This benchmark evaluates Layer 2 routing accuracy and HTTP latency over isolated PT-BR text + simulated sensor snapshots (`SFace`/`YOLO`/mode). End-to-end live audio (microphone + VAD + Whisper), Piper TTS, and physical chassis actuation tests are planned next.  
+> **Scope & Linux vs. Windows comparison:** The table above measures isolated Layer 2 routing on **RTX 3050 CUDA** (`352.5 ms` p50). On pure CPU on the Linux development laptop (**AMD Ryzen 7 5700U / Ollama v0.40.16 CPU**, `n=20`), routing accuracy stayed **`20/20 (100.0%)`** with warm latency `p50 = 9.73 s` (`min = 6.34 s` | `mean = 9.22 s`) — do not enable `OLLAMA_IGPU_ENABLE=1` on AMD Renoir RADV APUs, as Vulkan stalls after `load_tensors`.  
 > **Windows CUDA tip:** On Windows, Ollama `v0.40.16` defaults to Vulkan (`14.19 s` initial shader compilation). Set `OLLAMA_VULKAN=0` before `ollama serve` to force CUDA (`CUDA0`). Initial cold load after boot takes ~27–45 s (Ollama disables `mmap` on `windows_cuda`), then stays resident in VRAM at ~353 ms per call (`496.1 ms` cold call when already loaded).
 
 ---
@@ -134,7 +133,8 @@ PETeleco/
 ├── README.pt-BR.md             # Documentação em Português (BR)
 ├── AGENTS.md                   # AI engineering rules & shared Rover/PETeleco context (EN)
 ├── AGENTS.pt-BR.md             # Diretrizes para agentes & contexto paralelo (PT-BR)
-├── requirements.txt            # Minimal Python dependencies (`requests` for L2)
+├── .env.example                # Environment variable template (GEMINI_API_KEY, etc.)
+├── requirements.txt            # Minimal base deps + commented optional backends
 ├── prompts/
 │   └── persona_peteleco.md     # System Prompt v3.1 (single source of truth for persona & memory)
 ├── data/
@@ -148,36 +148,63 @@ PETeleco/
 │   └── ARCHITECTURE.pt-BR.md   # Protocolos, travas de segurança e modelos (PT-BR)
 └── src/
     ├── __init__.py
-    ├── escuta_stt.py           # Layer 1: Mic capture (VAD) + STT (faster-whisper / Gemini Audio)
-    ├── voz_biometria.py        # Layer 1: CPU Speaker Verification (camera-free voice ID)
+    ├── escuta_stt.py           # Layer 1: Mic capture (VAD + resample) + STT (faster-whisper / Gemini)
+    ├── voz_biometria.py        # Layer 1: CPU Speaker Verification (`torchaudio_192d`)
     ├── router_systemone.py     # Layer 2: Jev-based cognitive router (/v1/systemone)
     ├── memoria_pessoas.py      # Layer 3: 3-tier memory (hot JSON card + cold SQLite)
+    ├── tts_local.py            # Layer 3: Offline Piper TTS + OS fallbacks (Linux / Windows)
+    ├── visao_webcam.py         # Layer 3: Thread-safe WebcamLive capture + YuNet/SFace HUD
     ├── persona_peteleco.py     # Layer 3/4: Adaptive persona, body-state interlocks & Gemini REST
-    ├── testar_peteleco.py      # Interactive workbench (Voice + STT + Jev + Persona + Memory)
+    ├── testar_peteleco.py      # Live simulator & workbench (Webcam + Voice + STT + Jev + TTS)
     └── benchmark_router.py     # 36-case isolated benchmark suite
 ```
 
 ---
 
-## 🚀 Quickstart (Full Workbench + Layer 2 Benchmark)
+## 🚀 Quickstart (Full Live Pipeline on Linux CPU or Windows CUDA)
 
 1. Install Ollama (`>= v0.35`, verified on `v0.40.16`) and pull `tev1:0.8b`:
-   ```powershell
+   ```bash
    ollama pull tev1:0.8b
    ```
-2. Start Ollama (on Windows, set `OLLAMA_VULKAN=0` to use CUDA instead of Vulkan):
-   ```powershell
-   $env:OLLAMA_VULKAN="0"
-   ollama serve
-   ```
-3. Install Python dependencies and set `GEMINI_API_KEY` in a `.env` file (or reuse `../rover/.env`):
-   ```powershell
-   pip install -r requirements.txt
-   ```
-4. Run the 36-case Layer 2 benchmark or launch the **full interactive workbench (Voice + Webcam + STT + Jev + Persona + Memory)**:
-   ```powershell
+2. Start the Ollama server:
+   - **Linux (CPU / laptop without NVIDIA GPU):**
+     ```bash
+     ollama serve
+     ```
+   - **Windows (RTX 3050 lab PC — force CUDA instead of Vulkan):**
+     ```powershell
+     $env:OLLAMA_VULKAN="0"
+     ollama serve
+     ```
+3. Create a Python virtual environment and install the full simulator stack:
+   - **Linux (CPU-only PyTorch so you don't download ~3 GB of CUDA wheels):**
+     ```bash
+     python3 -m venv .venv
+     source .venv/bin/activate
+     pip install --index-url https://download.pytorch.org/whl/cpu torch torchaudio
+     pip install -r requirements.txt numpy sounddevice faster-whisper opencv-python piper-tts
+     ```
+     *(If using `uv`: `uv pip install --python .venv/bin/python ...`)*
+   - **Windows (NVIDIA CUDA):**
+     ```powershell
+     python -m venv .venv
+     .\.venv\Scripts\Activate.ps1
+     pip install -r requirements.txt numpy sounddevice faster-whisper opencv-python piper-tts
+     pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu124
+     ```
+4. *(Optional for Layer 4 `cognicao_gemini` cloud escalation)* Copy `.env.example` to `.env` (or reuse `../rover/.env`) and set `GEMINI_API_KEY`. Without a key, all local layers (`pool_fala_pronta`, `fala_parametrizada`, `acao_rover` table-edge safety interlocks, `YuNet+SFace` webcam ID, `Whisper`, and `Piper TTS`) run 100% offline.
+5. Launch the **full live webcam + microphone + TTS simulator** or the Layer 2 benchmark:
+   ```bash
+   # Hands-free continuous simulation with live webcam HUD + Piper TTS output:
+   python -m src.testar_peteleco --preview --continuo --tts
+
+   # Or interactive terminal workbench (+ optional live webcam HUD):
+   python -m src.testar_peteleco --preview --tts
+
+   # Isolated 36-case Layer 2 benchmark:
    python src/benchmark_router.py --suite todas --rodadas 2
-   python -m src.testar_peteleco --tts
    ```
-   - Inside the workbench: press `[ENTER]` on an empty line to speak on the microphone (with live webcam `YuNet + SFace` ID and automatic voice cross-enrollment), `/voz <name>` to record a voiceprint, `/cam` or `/foto <file> [prompt]` to test vision (`SFace` + Gemini), `/tts` to toggle Windows speech output, `/corpo <chao|bancada|no_colo>` for body awareness, and `/perfil` to inspect 3-tier memory. *(On first vision use without the sister `../rover` directory, `YuNet` and `SFace` ONNX weights download automatically to `models/`.)*
-   > Inside the workbench: press empty `ENTER` to speak via microphone, `/voz caio` to enroll a 4 s voice sample, `/testar_voz` to inspect cosine similarity scores, `/corpo bancada` to test table-edge safety interlocks, and `/perfil` to inspect 3-tier memory updates.
+   - **First run:** `YuNet`, `SFace` (`models/`), and `pt_BR-faber-medium` Piper voice files (`models/piper/`) download automatically if missing.
+   - **Whisper & mic calibration:** `--whisper-modelo auto` picks `small` on CUDA and `base` on CPU. In noisy rooms or sensitive mics, pass `--mic <index>` (list with `/mics`) and `--limiar-mic 0.025`.
+   - **Useful workbench commands:** empty `[ENTER]` for a single mic turn, `/continuo` to toggle hands-free continuous listening, `/preview` to toggle the live HUD window, `/rosto <name>` and `/voz <name>` to enroll your face/voice, `/corpo <chao|bancada|no_colo>` to test table-edge safety locks, `/foto <file> [prompt]` to test image input, and `/perfil` to inspect 3-tier memory.

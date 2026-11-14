@@ -165,6 +165,7 @@ class MotorPersonaPETeleco:
         self._yunet_detector: Any = None
         self._sface_recognizer: Any = None
         self._known_faces: Dict[str, Any] = {}
+        self._known_faces_path: Path = ROOT_DIR / "data" / "known_faces.json"
 
     def _inicializar_biometria_facial(self) -> bool:
         """Carrega YuNet + SFace e known_faces sob demanda sem travar quem roda sem OpenCV."""
@@ -198,7 +199,7 @@ class MotorPersonaPETeleco:
             yunet_path = self._baixar_modelo_onnx(yunet_cands[0], _URL_YUNET)
         if not sface_path:
             sface_path = self._baixar_modelo_onnx(sface_cands[0], _URL_SFACE)
-        if not (yunet_path and sface_path and db_path):
+        if not (yunet_path and sface_path):
             return False
 
         try:
@@ -206,13 +207,15 @@ class MotorPersonaPETeleco:
                 str(yunet_path), "", (320, 320), score_threshold=0.60, nms_threshold=0.30, top_k=10
             )
             self._sface_recognizer = cv2.FaceRecognizerSF.create(str(sface_path), "")
-            raw = json.loads(db_path.read_text(encoding="utf-8"))
-            self._known_faces = {
-                str(nome): np.array([emb], dtype=np.float32)
-                for nome, emb in raw.items()
-                if isinstance(emb, list) and len(emb) == 128
-            }
-            return bool(self._known_faces)
+            if db_path:
+                self._known_faces_path = db_path
+                raw = json.loads(db_path.read_text(encoding="utf-8"))
+                self._known_faces = {
+                    str(nome): np.array([emb], dtype=np.float32)
+                    for nome, emb in raw.items()
+                    if isinstance(emb, list) and len(emb) == 128
+                }
+            return True
         except Exception:
             self._yunet_detector = None
             self._sface_recognizer = None
@@ -240,19 +243,32 @@ class MotorPersonaPETeleco:
         except Exception:
             return None
 
-    def reconhecer_rosto_imagem_b64(self, imagem_jpeg_b64: str) -> str:
-        """Executa YuNet + SFace em uma imagem JPEG base64 e devolve 'nome (XX%)' ou 'nenhuma'."""
-        if not imagem_jpeg_b64 or not self._inicializar_biometria_facial():
-            return "nenhuma"
+    @staticmethod
+    def _decodificar_imagem_b64(imagem_jpeg_b64: str) -> Any:
         try:
             import cv2  # type: ignore
             import numpy as np  # type: ignore
-
+        except Exception:
+            return None
+        if not imagem_jpeg_b64:
+            return None
+        try:
             raw_b64 = imagem_jpeg_b64.split(",", 1)[-1].strip()
             buf = np.frombuffer(base64.b64decode(raw_b64), dtype=np.uint8)
-            img = cv2.imdecode(buf, cv2.IMREAD_COLOR)
-            if img is None:
-                return "nenhuma"
+            return cv2.imdecode(buf, cv2.IMREAD_COLOR)
+        except Exception:
+            return None
+
+    def detectar_e_reconhecer_faces(
+        self,
+        img: Any,
+        incluir_embedding: bool = False,
+    ) -> List[Dict[str, Any]]:
+        """Executa YuNet + SFace em frame BGR OpenCV e retorna lista ordenada por area."""
+        if img is None or not self._inicializar_biometria_facial():
+            return []
+        try:
+            import cv2  # type: ignore
 
             h, w, _ = img.shape
             max_dim = max(w, h)
@@ -270,27 +286,77 @@ class MotorPersonaPETeleco:
                 _, faces = self._yunet_detector.detect(img)
 
             if faces is None or len(faces) == 0:
-                return "nenhuma"
+                return []
 
-            # Avalia a maior face detectada em primeiro plano
-            maior_face = max(faces, key=lambda f: float(f[2] * f[3]))
-            aligned = self._sface_recognizer.alignCrop(img, maior_face)
-            feat = self._sface_recognizer.feature(aligned)
+            resultados: List[Dict[str, Any]] = []
+            faces_ord = sorted(faces, key=lambda f: float(f[2] * f[3]), reverse=True)
+            for face in faces_ord:
+                aligned = self._sface_recognizer.alignCrop(img, face)
+                feat = self._sface_recognizer.feature(aligned)
 
-            melhor_nome = ""
-            melhor_score = 0.0
-            for nome, feat_db in self._known_faces.items():
-                score = float(self._sface_recognizer.match(feat, feat_db, cv2.FaceRecognizerSF_FR_COSINE))
-                if score > melhor_score:
-                    melhor_score = score
-                    if score >= COSINE_THRESHOLD_SFACE:
-                        melhor_nome = nome
+                melhor_nome = ""
+                melhor_score = 0.0
+                for nome, feat_db in self._known_faces.items():
+                    score = float(self._sface_recognizer.match(feat, feat_db, cv2.FaceRecognizerSF_FR_COSINE))
+                    if score > melhor_score:
+                        melhor_score = score
+                        if score >= COSINE_THRESHOLD_SFACE:
+                            melhor_nome = nome
 
-            if melhor_nome:
-                return f"{melhor_nome} ({int(round(melhor_score * 100))}%)"
+                x, y, bw, bh = [int(round(float(v))) for v in face[:4]]
+                label = f"{melhor_nome} ({int(round(melhor_score * 100))}%)" if melhor_nome else "desconhecido"
+                item: Dict[str, Any] = {
+                    "bbox": (x, y, bw, bh),
+                    "nome": melhor_nome or "desconhecido",
+                    "score": melhor_score,
+                    "label": label,
+                }
+                if incluir_embedding:
+                    item["feat"] = feat
+                resultados.append(item)
+            return resultados
         except Exception:
+            return []
+
+    def reconhecer_rosto_imagem_b64(self, imagem_jpeg_b64: str) -> str:
+        """Executa YuNet + SFace em uma imagem JPEG base64 e devolve 'nome (XX%)' ou 'nenhuma'."""
+        img = self._decodificar_imagem_b64(imagem_jpeg_b64)
+        faces = self.detectar_e_reconhecer_faces(img)
+        if not faces or faces[0]["nome"] == "desconhecido":
             return "nenhuma"
-        return "nenhuma"
+        return str(faces[0]["label"])
+
+    def cadastrar_rosto_imagem_b64(self, nome_pessoa: str, imagem_jpeg_b64: str) -> Tuple[bool, str]:
+        """Extrai o embedding SFace da maior face na imagem e persiste em `known_faces.json`."""
+        img = self._decodificar_imagem_b64(imagem_jpeg_b64)
+        faces = self.detectar_e_reconhecer_faces(img, incluir_embedding=True)
+        if not faces:
+            return False, "Nenhum rosto detectado na imagem."
+        try:
+            import numpy as np  # type: ignore
+
+            feat = faces[0]["feat"]
+            vec = np.asarray(feat, dtype=np.float32).reshape(-1)
+            norm = float(np.linalg.norm(vec))
+            if norm > 1e-9:
+                vec = vec / norm
+
+            chave = nome_pessoa.strip()
+            db_path = self._known_faces_path
+            db_path.parent.mkdir(parents=True, exist_ok=True)
+            dados: Dict[str, Any] = {}
+            if db_path.exists():
+                dados = json.loads(db_path.read_text(encoding="utf-8"))
+            dados[chave] = [float(x) for x in vec.tolist()]
+
+            tmp = db_path.with_suffix(".json.tmp")
+            tmp.write_text(json.dumps(dados, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            tmp.replace(db_path)
+
+            self._known_faces[chave] = np.array([vec], dtype=np.float32)
+            return True, f"Rosto de '{chave}' salvo em {db_path.name} ({len(vec)}-D)."
+        except Exception as exc:
+            return False, f"Falha ao salvar rosto: {exc}"
 
     def _obter_historico_hidratado(self, pessoa_id: str) -> List[Dict[str, str]]:
         """Garante continuidade multi-turno mesmo entre execucoes/processos separados."""
@@ -682,6 +748,7 @@ class MotorPersonaPETeleco:
             pessoa_id=pessoa_id,
             system_inst=system_inst,
             transcricao=transcricao,
+            imagem_jpeg_b64=imagem_jpeg_b64,
         )
         if texto_ol:
             return texto_ol, f"ollama_chat:{modelo_ol}"
@@ -707,6 +774,8 @@ class MotorPersonaPETeleco:
             "gemini-3.5-flash",
             "gemini-3.1-flash-lite",
             "gemini-3.8-flash",
+            "gemini-2.5-flash-lite",
+            "gemini-2.5-flash",
         ):
             m = cand.strip()
             if m and m not in modelos:
@@ -760,6 +829,7 @@ class MotorPersonaPETeleco:
         pessoa_id: str,
         system_inst: str,
         transcricao: str,
+        imagem_jpeg_b64: Optional[str] = None,
     ) -> Tuple[str, str]:
         """Fallback local caso exista modelo de chat (nao `tev1`, que e exclusivo do SystemOne)."""
         try:
@@ -781,7 +851,7 @@ class MotorPersonaPETeleco:
         else:
             return "", ""
 
-        msgs = [{"role": "system", "content": system_inst}]
+        msgs: List[Dict[str, Any]] = [{"role": "system", "content": system_inst}]
         hist_pessoa = self._obter_historico_hidratado(pessoa_id)
         for item in hist_pessoa[-6:]:
             msgs.append(
@@ -790,7 +860,10 @@ class MotorPersonaPETeleco:
                     "content": item["text"],
                 }
             )
-        msgs.append({"role": "user", "content": transcricao.strip()})
+        msg_atual: Dict[str, Any] = {"role": "user", "content": transcricao.strip()}
+        if imagem_jpeg_b64:
+            msg_atual["images"] = [imagem_jpeg_b64]
+        msgs.append(msg_atual)
 
         try:
             resp = self._session.post(
