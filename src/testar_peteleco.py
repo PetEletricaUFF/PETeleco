@@ -12,8 +12,10 @@ Permite testar ponta a ponta no PC:
 """
 
 import argparse
+import base64
 import json
 from pathlib import Path
+import shlex
 import sys
 from typing import Optional
 
@@ -49,6 +51,7 @@ def _imprimir_ajuda() -> None:
         "  /corpo <chao|bancada|no_colo> -> Muda superficie fisica simulada do robo\n"
         "  /modo <normal|serio>  -> Alterna MODO_PERSONA manualmente\n"
         "  /perfil [id]          -> Mostra ficha quente JSON + ultimos episodios no SQLite\n"
+        "  /foto <arq> [frase]   -> Envia imagem JPEG/PNG com reconhecimento facial SFace + Gemini\n"
         "  /jev <frase>          -> Inspeciona todas as probabilidades do /v1/systemone para a frase\n"
         "  /mics                 -> Lista dispositivos de microfone disponiveis\n"
         "  /ajuda | /sair        -> Mostra comandos / encerra\n"
@@ -230,10 +233,28 @@ def main() -> None:
             print(json.dumps(dec.respostas_brutas, ensure_ascii=False, indent=2))
             continue
 
-        # Fluxo principal: microfone (ENTER vazio) ou texto digitado
+        # Fluxo principal: microfone (ENTER vazio), /foto ou texto digitado
         voice_id = "desconhecido"
         voice_conf = 0.0
+        imagem_b64: Optional[str] = None
         transcricao = entrada
+
+        if entrada.lower().startswith("/foto"):
+            resto = entrada[5:].strip()
+            try:
+                partes_cmd = shlex.split(resto, posix=False)
+            except ValueError:
+                partes_cmd = resto.split(None, 1)
+            if not partes_cmd:
+                print("[AVISO] Uso: /foto caminho_da_foto.jpg [pergunta opcional]")
+                continue
+            caminho_foto = Path(partes_cmd[0].strip('"').strip("'")).expanduser()
+            if not caminho_foto.exists():
+                print(f"[ERRO] Arquivo nao encontrado: {caminho_foto}")
+                continue
+            imagem_b64 = base64.b64encode(caminho_foto.read_bytes()).decode("ascii")
+            transcricao = " ".join(partes_cmd[1:]).strip() if len(partes_cmd) > 1 else "Olha aqui o que eu tô te mostrando!"
+            print(f"[FOTO] Carregada: {caminho_foto.name} | pergunta: \"{transcricao}\"")
 
         if not transcricao:
             print("[MIC] Ouvindo... fale agora (para sozinho apos 1,2s de silencio).")
@@ -258,10 +279,17 @@ def main() -> None:
                     if n > 0:
                         print(f"[AUTO-VOZ] Amostra vocal salva automaticamente para {pid_face} ({n} total).")
 
+        face_turno = face_simulada
+        if face_turno == "nenhuma" and imagem_b64:
+            face_auto = motor.reconhecer_rosto_imagem_b64(imagem_b64)
+            if face_auto != "nenhuma":
+                face_turno = face_auto
+                print(f"[SFACE] Rosto detectado automaticamente na imagem: {face_auto}")
+
         decisao_jev: Optional[DecisaoRoteador] = None
         if jev_online and not args.sem_jev:
             try:
-                pessoa_ctx = face_simulada
+                pessoa_ctx = face_turno
                 if pessoa_ctx == "nenhuma" and voice_id != "desconhecido":
                     pessoa_ctx = f"{memoria.obter_perfil(voice_id)['nome']} ({int(round(voice_conf * 100))}% voz)"
                 ctx = ContextoRover(
@@ -283,9 +311,10 @@ def main() -> None:
         resultado = motor.responder(
             transcricao=transcricao,
             decisao_jev=decisao_jev,
-            face_id=face_simulada,
+            face_id=face_turno,
             voice_id=voice_id,
             voice_conf=voice_conf,
+            imagem_jpeg_b64=imagem_b64,
         )
         print(
             f"[CONTEXTO] pessoa={resultado['pessoa_display']} | id={resultado['modo_identificacao']} "

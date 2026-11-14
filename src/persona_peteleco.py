@@ -10,8 +10,10 @@ perfil da pessoa e chama a API REST do Gemini na rota `cognicao_gemini` (com
 normalizacao fonetica pronta para o Piper TTS).
 """
 
+import base64
 from dataclasses import dataclass
 from datetime import datetime
+import json
 from pathlib import Path
 import random
 import re
@@ -29,6 +31,7 @@ from src.router_systemone import DecisaoRoteador
 
 
 DEFAULT_PROMPT_PATH = ROOT_DIR / "prompts" / "persona_peteleco.md"
+COSINE_THRESHOLD_SFACE = 0.363
 
 
 @dataclass
@@ -113,6 +116,120 @@ class MotorPersonaPETeleco:
         self._env = carregar_env()
         self._session = requests.Session()
         self._historicos_por_pessoa: Dict[str, List[Dict[str, str]]] = {}
+        self._face_init_tentado = False
+        self._yunet_detector: Any = None
+        self._sface_recognizer: Any = None
+        self._known_faces: Dict[str, Any] = {}
+
+    def _inicializar_biometria_facial(self) -> bool:
+        """Carrega YuNet + SFace e known_faces sob demanda sem travar quem roda sem OpenCV."""
+        if self._face_init_tentado:
+            return self._yunet_detector is not None and self._sface_recognizer is not None
+        self._face_init_tentado = True
+
+        try:
+            import cv2  # type: ignore
+            import numpy as np  # type: ignore
+        except Exception:
+            return False
+
+        yunet_cands = [
+            ROOT_DIR / "models" / "face_detection_yunet_2023mar.onnx",
+            ROOT_DIR.parent / "rover" / "tools" / "models" / "face_detection_yunet_2023mar.onnx",
+        ]
+        sface_cands = [
+            ROOT_DIR / "models" / "face_recognition_sface_2021dec.onnx",
+            ROOT_DIR.parent / "rover" / "tools" / "models" / "face_recognition_sface_2021dec.onnx",
+        ]
+        db_cands = [
+            ROOT_DIR / "data" / "known_faces.json",
+            ROOT_DIR.parent / "rover" / "tools" / "known_faces.json",
+        ]
+
+        yunet_path = next((p for p in yunet_cands if p.exists()), None)
+        sface_path = next((p for p in sface_cands if p.exists()), None)
+        db_path = next((p for p in db_cands if p.exists()), None)
+        if not (yunet_path and sface_path and db_path):
+            return False
+
+        try:
+            self._yunet_detector = cv2.FaceDetectorYN.create(
+                str(yunet_path), "", (320, 320), score_threshold=0.60, nms_threshold=0.30, top_k=10
+            )
+            self._sface_recognizer = cv2.FaceRecognizerSF.create(str(sface_path), "")
+            raw = json.loads(db_path.read_text(encoding="utf-8"))
+            self._known_faces = {
+                str(nome): np.array([emb], dtype=np.float32)
+                for nome, emb in raw.items()
+                if isinstance(emb, list) and len(emb) == 128
+            }
+            return bool(self._known_faces)
+        except Exception:
+            self._yunet_detector = None
+            self._sface_recognizer = None
+            self._known_faces = {}
+            return False
+
+    def reconhecer_rosto_imagem_b64(self, imagem_jpeg_b64: str) -> str:
+        """Executa YuNet + SFace em uma imagem JPEG base64 e devolve 'nome (XX%)' ou 'nenhuma'."""
+        if not imagem_jpeg_b64 or not self._inicializar_biometria_facial():
+            return "nenhuma"
+        try:
+            import cv2  # type: ignore
+            import numpy as np  # type: ignore
+
+            raw_b64 = imagem_jpeg_b64.split(",", 1)[-1].strip()
+            buf = np.frombuffer(base64.b64decode(raw_b64), dtype=np.uint8)
+            img = cv2.imdecode(buf, cv2.IMREAD_COLOR)
+            if img is None:
+                return "nenhuma"
+
+            h, w, _ = img.shape
+            max_dim = max(w, h)
+            if max_dim > 1024:
+                scale = 960.0 / max_dim
+                sw, sh = max(1, int(round(w * scale))), max(1, int(round(h * scale)))
+                img_small = cv2.resize(img, (sw, sh), interpolation=cv2.INTER_AREA)
+                self._yunet_detector.setInputSize((sw, sh))
+                _, faces = self._yunet_detector.detect(img_small)
+                if faces is not None and len(faces) > 0:
+                    faces = faces.copy()
+                    faces[:, :14] /= scale
+            else:
+                self._yunet_detector.setInputSize((w, h))
+                _, faces = self._yunet_detector.detect(img)
+
+            if faces is None or len(faces) == 0:
+                return "nenhuma"
+
+            # Avalia a maior face detectada em primeiro plano
+            maior_face = max(faces, key=lambda f: float(f[2] * f[3]))
+            aligned = self._sface_recognizer.alignCrop(img, maior_face)
+            feat = self._sface_recognizer.feature(aligned)
+
+            melhor_nome = ""
+            melhor_score = 0.0
+            for nome, feat_db in self._known_faces.items():
+                score = float(self._sface_recognizer.match(feat, feat_db, cv2.FaceRecognizerSF_FR_COSINE))
+                if score > melhor_score:
+                    melhor_score = score
+                    if score >= COSINE_THRESHOLD_SFACE:
+                        melhor_nome = nome
+
+            if melhor_nome:
+                return f"{melhor_nome} ({int(round(melhor_score * 100))}%)"
+        except Exception:
+            return "nenhuma"
+        return "nenhuma"
+
+    def _obter_historico_hidratado(self, pessoa_id: str) -> List[Dict[str, str]]:
+        """Garante continuidade multi-turno mesmo entre execucoes/processos separados."""
+        hist = self._historicos_por_pessoa.get(pessoa_id)
+        if not hist:
+            hist = self.memoria.obter_historico_dialogo(pessoa_id, limite_turnos=4)
+            if hist:
+                self._historicos_por_pessoa[pessoa_id] = hist
+        return hist or []
 
     def eh_modo_formal(self, perfil: Dict[str, Any]) -> bool:
         """Retorna True se o turno exigir postura estritamente formal (SERIO ou Orientador)."""
@@ -133,6 +250,7 @@ class MotorPersonaPETeleco:
     ) -> str:
         perfil_str, memoria_str = self.memoria.formatar_contexto_prompt(pessoa_id)
         modo_efetivo = "SERIO" if self.eh_modo_formal(perfil) else self.modo_persona
+        contexto_sala = self.memoria.obter_contexto_sala_recente(limite=3)
         contexto_turno = (
             "=== CONTEXTO DO TURNO (injetado dinamicamente) ===\n"
             f"MODO_PERSONA: {modo_efetivo}\n"
@@ -141,7 +259,8 @@ class MotorPersonaPETeleco:
             f"PERFIL_PESSOA: {{{perfil_str}}}\n"
             f"MEMORIA_PESSOA: {memoria_str}\n"
             f"ESTADO_CORPORAL: {{{self.estado.formatar_prompt()}}}\n"
-            f"TELEMETRIA: {self.estado.formatar_telemetria()}"
+            f"TELEMETRIA: {self.estado.formatar_telemetria()}\n"
+            f"ULTIMAS_FALAS_SALA: {contexto_sala}"
         )
         return f"{self.prompt_base}\n\n{contexto_turno}"
 
@@ -228,36 +347,58 @@ class MotorPersonaPETeleco:
         formal = self.eh_modo_formal(perfil)
         nome = perfil.get("nome", "")
         vocativo = f", {nome}" if nome and nome != "desconhecido" else ""
+        palavrao = bool(perfil.get("libera_palavrao", False))
 
         if formal:
             tabela_formal = {
-                "saudacao": f"Olá{', professor Felipe' if perfil.get('papel') == 'professor_orientador' else vocativo}. Estou pronto para ajudar.",
-                "despedida": "Até logo. Qualquer coisa estou por aqui.",
-                "ok_confirmacao": "Entendido.",
-                "elogio_agradecimento": "Por nada, estou à disposição.",
+                "saudacao": f"Olá{', professor Felipe' if perfil.get('papel') == 'professor_orientador' else vocativo}. Estou pronto aqui na bancada, em que posso ajudar?",
+                "despedida": "Até logo! Qualquer coisa é só chamar que eu sigo por aqui.",
+                "ok_confirmacao": "Entendido, tudo certo por aqui.",
+                "elogio_agradecimento": "Por nada! Estou à disposição quando precisar.",
             }
             return tabela_formal.get(subtipo, "Certo.")
 
+        if nome == "desconhecido":
+            tabela_desconhecido = {
+                "saudacao": [
+                    "Qual foi! Tô acordado aqui na bancada. E aí, tu é quem aqui do PET ou tá visitando a sala?",
+                    "Opa, fala aí! Eu ainda não tenho tua cara nem tua voz salvas aqui. Qual é o teu nome?",
+                ],
+                "despedida": [
+                    "Valeu, até a próxima! Da próxima vez passa teu nome pra eu já te reconhecer na entrada.",
+                    "Falou! Se passar aqui pelo PET de novo dá um salve.",
+                ],
+            }
+            if subtipo in tabela_desconhecido:
+                return random.choice(tabela_desconhecido[subtipo])
+
         tabela_normal = {
             "saudacao": [
-                f"Qual foi{vocativo}! Tô na escuta.",
-                f"Fala{vocativo}, tranquilo? Manda a boa!",
-                "Opa, tô ligado aqui. Que que pega?",
+                f"Qual foi{vocativo}! Tô na escuta aqui na bancada. Tu tá aprontando o quê hoje?",
+                f"Fala{vocativo}, tranquilo? Tô ligado com a câmera aberta aqui, manda a boa!",
+                f"Opa{vocativo}, cheguei! Tava só olhando a sala esperando alguém aparecer pra trocar ideia. Que que pega?",
             ],
             "despedida": [
-                f"Valeu{vocativo}, até depois!",
-                "Falou! Se precisar de alguma parada na bancada eu tô por aqui.",
+                f"Valeu{vocativo}, até depois! Não vai largar o ferro de solda ligado antes de sair, hein.",
+                "Falou! Se precisar de ajuda na bancada ou quiser testar alguma parada minha depois, só chamar.",
             ],
             "ok_confirmacao": [
-                "Beleza, fechado.",
-                "Show, entendi.",
+                "Beleza, fechado! Qualquer outra parada só falar.",
+                "Show, entendi certinho. Tô aqui aguardando o próximo BO.",
             ],
             "elogio_agradecimento": [
-                "Tamo junto! Pelo menos alguém aqui reconhece meu trampo.",
-                f"Tranquilo{vocativo}, é pra isso que eu tô aqui!",
+                f"Tamo junto{vocativo}! Pelo menos alguém nessa sala reconhece quando eu mando bem.",
+                f"Tranquilo{vocativo}, é pra isso que me botaram nessa placa aqui! Precisando, só mandar.",
             ],
         }
-        opcoes = tabela_normal.get(subtipo, ["Beleza."])
+        if palavrao:
+            tabela_normal["saudacao"].append(
+                f"Aí sim{vocativo}! Finalmente alguém falou comigo, porra. E aí, qual é a missão de hoje na bancada?"
+            )
+            tabela_normal["elogio_agradecimento"].append(
+                f"Que isso{vocativo}, tô brabo demais hoje, né? Valeu, pô, manda a próxima!"
+            )
+        opcoes = tabela_normal.get(subtipo, ["Beleza, tô acompanhando aqui!"])
         return random.choice(opcoes)
 
     def _responder_local_parametrizada(
@@ -268,20 +409,22 @@ class MotorPersonaPETeleco:
         modo_identificacao: str,
     ) -> str:
         formal = self.eh_modo_formal(perfil)
+        nome = perfil.get("nome", "")
+        vocativo = f", {nome}" if nome and nome != "desconhecido" else ""
         agora = datetime.now()
 
         if subtipo == "hora_atual":
             h_str = agora.strftime("%H horas e %M minutos")
             if formal:
                 return f"Agora são {h_str}."
-            return f"Agora são {h_str}."
+            return f"Agora são {h_str}{vocativo}. Tá correndo contra algum prazo aí ou tá só matando tempo na sala?"
 
         if subtipo == "bateria_temp":
             v = f"{self.estado.bateria_v:.1f}".replace(".", " vírgula ")
             t = f"{self.estado.temperatura_c:.0f}"
             if formal:
                 return f"A bateria está com {v} volts e a temperatura estimada é de {t} graus."
-            return f"Tô com {v} volts na bateria e rodando tranquilo a {t} graus."
+            return f"Tô com {v} volts na bateria e rodando de boa a {t} graus. Por enquanto não vou pegar fogo não!"
 
         if subtipo == "previsao_clima":
             if formal:
@@ -348,10 +491,23 @@ class MotorPersonaPETeleco:
         voice_conf: float = 0.0,
         imagem_jpeg_b64: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Executa o turno completo (identificacao -> travas -> rota -> memoria)."""
+        """Executa o turno completo (biometria facial -> identificacao -> travas -> rota -> memoria)."""
+        face_id_efetivo = (face_id or "nenhuma").strip()
+        if imagem_jpeg_b64 and normalizar_chave(face_id_efetivo) in (
+            "",
+            "nenhuma",
+            "nenhum",
+            "auto",
+            "none",
+            "desconhecido",
+        ):
+            face_detectada = self.reconhecer_rosto_imagem_b64(imagem_jpeg_b64)
+            if face_detectada != "nenhuma":
+                face_id_efetivo = face_detectada
+
         pessoa_id, perfil, modo_id, pessoa_display = self.memoria.resolver_pessoa(
             transcricao=transcricao,
-            face_id=face_id,
+            face_id=face_id_efetivo,
             voice_id=voice_id,
             voice_conf=voice_conf,
         )
@@ -487,8 +643,8 @@ class MotorPersonaPETeleco:
                 modelos.append(m)
 
         contents: List[Dict[str, Any]] = []
-        hist_pessoa = self._historicos_por_pessoa.get(pessoa_id, [])
-        for item in hist_pessoa[-4:]:
+        hist_pessoa = self._obter_historico_hidratado(pessoa_id)
+        for item in hist_pessoa[-6:]:
             contents.append(
                 {
                     "role": "user" if item["role"] == "user" else "model",
@@ -556,8 +712,8 @@ class MotorPersonaPETeleco:
             return "", ""
 
         msgs = [{"role": "system", "content": system_inst}]
-        hist_pessoa = self._historicos_por_pessoa.get(pessoa_id, [])
-        for item in hist_pessoa[-4:]:
+        hist_pessoa = self._obter_historico_hidratado(pessoa_id)
+        for item in hist_pessoa[-6:]:
             msgs.append(
                 {
                     "role": "user" if item["role"] == "user" else "assistant",

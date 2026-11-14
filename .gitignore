@@ -25,7 +25,8 @@ audio_cache/
 *.sqlite
 *.wav
 *.log
-known_faces.json
+/known_faces.json
+!data/known_faces.json
 
 # OS & IDEs
 .DS_Store

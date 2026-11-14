@@ -392,7 +392,7 @@ class GerenciadorMemoriaPessoas:
         if not fala_limpa:
             return
 
-        resumo_curto = (resumo_episodio or self._resumir_episodio_local(fala_limpa)).strip()
+        resumo_curto = (resumo_episodio or self._resumir_episodio_local(fala_limpa, resp_limpa)).strip()
 
         with closing(sqlite3.connect(self.sqlite_path)) as conn:
             conn.execute(
@@ -450,21 +450,86 @@ class GerenciadorMemoriaPessoas:
                 ).fetchall()
         return [dict(r) for r in rows]
 
+    def obter_historico_dialogo(self, pessoa_id: str, limite_turnos: int = 4) -> List[Dict[str, str]]:
+        """Retorna os ultimos turnos de uma pessoa do SQLite em ordem cronologica para manter linearidade."""
+        if not self.sqlite_path.exists():
+            return []
+        with closing(sqlite3.connect(self.sqlite_path)) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT fala_usuario, resposta_robo
+                FROM episodios
+                WHERE pessoa_id = ?
+                ORDER BY id DESC LIMIT ?
+                """,
+                (pessoa_id, max(1, limite_turnos)),
+            ).fetchall()
+        historico: List[Dict[str, str]] = []
+        for r in reversed(rows):
+            fala = str(r["fala_usuario"] or "").strip()
+            resp = str(r["resposta_robo"] or "").strip()
+            if fala and resp:
+                historico.append({"role": "user", "text": fala})
+                historico.append({"role": "model", "text": resp})
+        return historico
+
+    def obter_contexto_sala_recente(self, limite: int = 3) -> str:
+        """Retorna as ultimas falas recentes na sala (mesmo entre pessoas diferentes) para continuidade."""
+        if not self.sqlite_path.exists():
+            return "vazio"
+        with closing(sqlite3.connect(self.sqlite_path)) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT timestamp, pessoa_id, fala_usuario, resposta_robo
+                FROM episodios
+                ORDER BY id DESC LIMIT ?
+                """,
+                (max(1, limite),),
+            ).fetchall()
+        if not rows:
+            return "vazio"
+        linhas: List[str] = []
+        for r in reversed(rows):
+            pid = str(r["pessoa_id"] or "desconhecido")
+            nome = self.obter_perfil(pid).get("nome", pid)
+            hora = str(r["timestamp"] or "")[-5:] or "--:--"
+            fala = re.sub(r"\s+", " ", str(r["fala_usuario"] or "")).strip()
+            resp = re.sub(r"\s+", " ", str(r["resposta_robo"] or "")).strip()
+            if len(fala) > 90:
+                fala = fala[:87].rstrip() + "..."
+            if len(resp) > 120:
+                resp = resp[:117].rstrip() + "..."
+            if fala and resp:
+                linhas.append(f'[{hora}] {nome}: "{fala}" -> PETeleco: "{resp}"')
+        return " | ".join(linhas) if linhas else "vazio"
+
     @staticmethod
-    def _resumir_episodio_local(fala: str) -> str:
-        """Compacta a fala do usuario em uma linha curta para a janela FIFO."""
-        limpa = re.sub(r"\s+", " ", fala).strip()
-        if len(limpa) <= 110:
-            return limpa
-        return limpa[:107].rstrip() + "..."
+    def _resumir_episodio_local(fala: str, resposta: str = "") -> str:
+        """Compacta pergunta do usuario e resposta do PETeleco em uma linha para a janela FIFO."""
+        fala_limpa = re.sub(r"\s+", " ", fala).strip()
+        if len(fala_limpa) > 65:
+            fala_limpa = fala_limpa[:62].rstrip() + "..."
+        resp_limpa = re.sub(r"\s+", " ", resposta or "").strip()
+        if not resp_limpa:
+            return fala_limpa
+        if len(resp_limpa) > 75:
+            resp_limpa = resp_limpa[:72].rstrip() + "..."
+        return f"Disse: '{fala_limpa}' -> PETeleco: '{resp_limpa}'"
 
     @staticmethod
     def _evoluir_tracos_heuristico(perfil: Dict[str, Any], fala_usuario: str) -> None:
         """Atualiza tracos e flags de estilo conforme observa o jeito da pessoa."""
         fala_norm = normalizar_chave(fala_usuario)
         tracos = list(perfil.get("tracos_personalidade") or [])
+        preservar_tracos_criador = (
+            perfil.get("papel") == "membro_pet_criador" and len(tracos) >= MAX_TRACOS
+        )
 
         def _adicionar_traco(novo: str) -> None:
+            if preservar_tracos_criador:
+                return
             if novo not in tracos:
                 tracos.append(novo)
 
