@@ -98,6 +98,51 @@ def normalizar_para_tts(texto: str) -> str:
     return re.sub(r"\s+", " ", limpo).strip()
 
 
+_URL_YUNET = "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx"
+_URL_SFACE = "https://github.com/opencv/opencv_zoo/raw/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx"
+
+_GATILHOS_VISUAIS = (
+    "olha",
+    "olhando",
+    "ta vendo",
+    "tá vendo",
+    "esta vendo",
+    "está vendo",
+    "consegue ver",
+    "da pra ver",
+    "dá pra ver",
+    "meu corte",
+    "corte de cabelo",
+    "na regua",
+    "na régua",
+    "minha cara",
+    "meu rosto",
+    "minha roupa",
+    "minha camisa",
+    "minha mao",
+    "minha mão",
+    "segurando",
+    "mostrando",
+    "essa placa",
+    "esse circuito",
+    "esse componente",
+    "esse codigo",
+    "esse código",
+    "na minha frente",
+    "aqui na frente",
+    "na bancada",
+    "o que tem aqui",
+)
+
+
+def parece_pedido_visual(transcricao: str) -> bool:
+    """Detecta pedidos que exigem olhar a camera mesmo quando o roteador local fica dividido."""
+    norm = normalizar_chave(transcricao)
+    if not norm:
+        return False
+    return any(normalizar_chave(g) in norm for g in _GATILHOS_VISUAIS)
+
+
 class MotorPersonaPETeleco:
     """Orquestra persona adaptativa por pessoa, estado corporal e chamadas LLM."""
 
@@ -149,6 +194,10 @@ class MotorPersonaPETeleco:
         yunet_path = next((p for p in yunet_cands if p.exists()), None)
         sface_path = next((p for p in sface_cands if p.exists()), None)
         db_path = next((p for p in db_cands if p.exists()), None)
+        if not yunet_path:
+            yunet_path = self._baixar_modelo_onnx(yunet_cands[0], _URL_YUNET)
+        if not sface_path:
+            sface_path = self._baixar_modelo_onnx(sface_cands[0], _URL_SFACE)
         if not (yunet_path and sface_path and db_path):
             return False
 
@@ -169,6 +218,27 @@ class MotorPersonaPETeleco:
             self._sface_recognizer = None
             self._known_faces = {}
             return False
+
+    def _baixar_modelo_onnx(self, destino: Path, url: str) -> Optional[Path]:
+        """Baixa modelos oficiais YuNet/SFace para `models/` se nao houver copia local."""
+        try:
+            destino.parent.mkdir(parents=True, exist_ok=True)
+            tmp = destino.with_suffix(".onnx.tmp")
+            print(f"[VISAO] Baixando modelo facial {destino.name} para {destino.parent}...")
+            with self._session.get(url, stream=True, timeout=60.0, allow_redirects=True) as resp:
+                resp.raise_for_status()
+                with tmp.open("wb") as f:
+                    for chunk in resp.iter_content(chunk_size=65536):
+                        if chunk:
+                            f.write(chunk)
+            if tmp.stat().st_size < 10_000:
+                tmp.unlink(missing_ok=True)
+                return None
+            tmp.replace(destino)
+            print(f"[VISAO] Modelo {destino.name} pronto ({destino.stat().st_size // 1024} KB).")
+            return destino
+        except Exception:
+            return None
 
     def reconhecer_rosto_imagem_b64(self, imagem_jpeg_b64: str) -> str:
         """Executa YuNet + SFace em uma imagem JPEG base64 e devolve 'nome (XX%)' ou 'nenhuma'."""

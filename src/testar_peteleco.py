@@ -14,10 +14,12 @@ Permite testar ponta a ponta no PC:
 import argparse
 import base64
 import json
+import os
 from pathlib import Path
 import shlex
+import subprocess
 import sys
-from typing import Optional
+from typing import Any, Optional
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
@@ -25,7 +27,7 @@ if str(ROOT_DIR) not in sys.path:
 
 from src.escuta_stt import EscutaSTT
 from src.memoria_pessoas import GerenciadorMemoriaPessoas
-from src.persona_peteleco import EstadoCorporal, MotorPersonaPETeleco
+from src.persona_peteleco import EstadoCorporal, MotorPersonaPETeleco, parece_pedido_visual
 from src.router_systemone import ContextoRover, DecisaoRoteador, RoteadorSystemOne
 from src.voz_biometria import IdentificadorVoz
 
@@ -43,19 +45,91 @@ def _estado_para_modo_jev(estado: EstadoCorporal) -> str:
 def _imprimir_ajuda() -> None:
     print(
         "\nComandos da bancada:\n"
-        "  [ENTER vazio]         -> Grava pelo microfone, identifica voz, transcreve (STT), roda Jev e responde\n"
-        "  <qualquer frase>      -> Envia texto direto para Jev + Persona + Memoria\n"
+        "  [ENTER vazio]         -> Grava pelo microfone, identifica voz/rosto, STT, roda Jev e responde\n"
+        "  <qualquer frase>      -> Envia texto direto para Jev + Persona + Memoria (+ webcam se pedir visao)\n"
         "  /voz <id_ou_apelido>  -> Grava 4s no mic para cadastrar voz (ex: /voz caio, /voz to2, /voz felipe_sass)\n"
         "  /testar_voz           -> Grava 4s no mic e mostra ranking de similaridade cosseno + STT\n"
-        "  /pessoa <id|auto>     -> Simula rosto SFace na camera (ou 'auto' para identificar so por voz/fala)\n"
+        "  /cam                  -> Tira 1 foto da webcam agora e testa reconhecimento facial YuNet+SFace\n"
+        "  /foto <arq> [frase]   -> Envia imagem JPEG/PNG com reconhecimento facial SFace + Gemini\n"
+        "  /tts                  -> Liga/desliga leitura da resposta em voz alta no alto-falante (Windows)\n"
+        "  /pessoa <id|auto>     -> Simula rosto SFace na camera (ou 'auto' para webcam/voz real)\n"
         "  /corpo <chao|bancada|no_colo> -> Muda superficie fisica simulada do robo\n"
         "  /modo <normal|serio>  -> Alterna MODO_PERSONA manualmente\n"
         "  /perfil [id]          -> Mostra ficha quente JSON + ultimos episodios no SQLite\n"
-        "  /foto <arq> [frase]   -> Envia imagem JPEG/PNG com reconhecimento facial SFace + Gemini\n"
         "  /jev <frase>          -> Inspeciona todas as probabilidades do /v1/systemone para a frase\n"
         "  /mics                 -> Lista dispositivos de microfone disponiveis\n"
         "  /ajuda | /sair        -> Mostra comandos / encerra\n"
     )
+
+
+def _capturar_webcam_b64(camera_idx: int = 0) -> Optional[str]:
+    """Captura 1 frame JPEG base64 da webcam do PC (redimensionado ate 640px)."""
+    try:
+        import cv2  # type: ignore
+    except Exception:
+        return None
+
+    cap = None
+    try:
+        if sys.platform.startswith("win") and hasattr(cv2, "CAP_DSHOW"):
+            cap = cv2.VideoCapture(camera_idx, cv2.CAP_DSHOW)
+        if cap is None or not cap.isOpened():
+            if cap is not None:
+                cap.release()
+            cap = cv2.VideoCapture(camera_idx)
+        if not cap.isOpened():
+            return None
+
+        frame = None
+        for _ in range(3):
+            ok, f = cap.read()
+            if ok and f is not None:
+                frame = f
+        if frame is None:
+            return None
+
+        h, w = frame.shape[:2]
+        max_dim = max(h, w)
+        if max_dim > 640:
+            scale = 640.0 / max_dim
+            frame = cv2.resize(frame, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+
+        ok_enc, buf = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 82])
+        if not ok_enc:
+            return None
+        return base64.b64encode(buf.tobytes()).decode("ascii")
+    except Exception:
+        return None
+    finally:
+        if cap is not None:
+            cap.release()
+
+
+def _falar_tts_windows(texto_tts: str) -> None:
+    """Sintetiza a resposta em voz alta usando SAPI nativo do Windows (zero VRAM)."""
+    texto = (texto_tts or "").strip()
+    if not texto or not sys.platform.startswith("win"):
+        return
+    env = os.environ.copy()
+    env["PETELECO_TTS_TEXT"] = texto
+    ps = (
+        "Add-Type -AssemblyName System.Speech; "
+        "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
+        "$v = $s.GetInstalledVoices() | Where-Object { $_.VoiceInfo.Culture.Name -like 'pt*' } | Select-Object -First 1; "
+        "if ($v) { $s.SelectVoice($v.VoiceInfo.Name) }; "
+        "$s.Rate = 1; "
+        "$s.Speak($env:PETELECO_TTS_TEXT)"
+    )
+    try:
+        subprocess.run(
+            ["powershell", "-NoProfile", "-Command", ps],
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=25,
+        )
+    except Exception:
+        pass
 
 
 def _verificar_jev(roteador: RoteadorSystemOne) -> tuple[bool, str]:
@@ -69,6 +143,9 @@ def _verificar_jev(roteador: RoteadorSystemOne) -> tuple[bool, str]:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Bancada de teste PETeleco (Voz + STT + Jev + Persona)")
     parser.add_argument("--sem-jev", action="store_true", help="Pula roteador /v1/systemone e vai direto para a Persona")
+    parser.add_argument("--sem-webcam", action="store_true", help="Desativa captura automatica de webcam na bancada")
+    parser.add_argument("--camera", type=int, default=0, help="Indice da webcam local (padrao: 0)")
+    parser.add_argument("--tts", action="store_true", help="Ativa leitura das respostas em voz alta (Windows SAPI)")
     parser.add_argument("--superficie", choices=["chao", "bancada", "no_colo"], default="chao")
     parser.add_argument("--pessoa", default="auto", help="Pessoa simulada no SFace inicial (padrao: auto)")
     parser.add_argument("--ollama-url", default="http://localhost:11434")
@@ -86,6 +163,9 @@ def main() -> None:
     if not args.sem_jev:
         jev_online, jev_versao = _verificar_jev(roteador)
 
+    webcam_ativa = False if args.sem_webcam else (_capturar_webcam_b64(args.camera) is not None)
+    tts_ativo = bool(args.tts)
+
     face_simulada = "nenhuma"
     if args.pessoa != "auto":
         pid_arg = memoria.mapear_identificador(args.pessoa)
@@ -99,6 +179,8 @@ def main() -> None:
     print("=" * 72)
     print(f"Biometria de Voz : {voz_bio.backend} | vozes cadastradas: {list(voz_bio.vozes.keys()) or 'nenhuma'}")
     print(f"Perfis carregados: {len(memoria.perfis)} entradas ({memoria.perfis_path.name})")
+    print(f"Webcam local     : {'ATIVA (YuNet+SFace)' if webcam_ativa else 'OFF (use /cam ou --camera N)'}")
+    print(f"Saida TTS Windows: {'ON' if tts_ativo else 'OFF (use /tts para ativar)'}")
     print(f"Gemini API Key   : {'OK' if tem_gemini else 'NAO ENCONTRADA (.env)'}")
     if jev_online:
         print(f"Jev /v1/systemone: ONLINE (Ollama {jev_versao} | modelo {roteador.model})")
@@ -108,10 +190,10 @@ def main() -> None:
 
     while True:
         try:
-            label_face = face_simulada if face_simulada != "nenhuma" else "auto"
+            label_face = face_simulada if face_simulada != "nenhuma" else ("cam+voz" if webcam_ativa else "auto")
             status_prompt = (
                 f"\n[rosto={label_face} | corpo={estado.superficie}/{estado.movimento} "
-                f"| modo={motor.modo_persona} | jev={'ON' if jev_online else 'OFF'}]\n> "
+                f"| modo={motor.modo_persona} | jev={'ON' if jev_online else 'OFF'} | tts={'ON' if tts_ativo else 'OFF'}]\n> "
             )
             entrada = input(status_prompt).strip()
         except (EOFError, KeyboardInterrupt):
@@ -128,6 +210,21 @@ def main() -> None:
         if entrada.lower() == "/mics":
             for idx, nome in stt.listar_microfones():
                 print(f"  [{idx}] {nome}")
+            continue
+
+        if entrada.lower() == "/tts":
+            tts_ativo = not tts_ativo
+            print(f"[INFO] TTS em voz alta: {'ON' if tts_ativo else 'OFF'}")
+            continue
+
+        if entrada.lower() == "/cam":
+            frame_cam = _capturar_webcam_b64(args.camera)
+            if not frame_cam:
+                print(f"[ERRO] Nao consegui capturar frame da webcam {args.camera}.")
+            else:
+                webcam_ativa = True
+                face_cam = motor.reconhecer_rosto_imagem_b64(frame_cam)
+                print(f"[CAM] Frame capturado! Reconhecimento YuNet+SFace: {face_cam}")
             continue
 
         if entrada.lower().startswith("/pessoa"):
@@ -236,7 +333,9 @@ def main() -> None:
         # Fluxo principal: microfone (ENTER vazio), /foto ou texto digitado
         voice_id = "desconhecido"
         voice_conf = 0.0
+        audio_mic: Any = None
         imagem_b64: Optional[str] = None
+        usou_comando_foto = False
         transcricao = entrada
 
         if entrada.lower().startswith("/foto"):
@@ -253,17 +352,18 @@ def main() -> None:
                 print(f"[ERRO] Arquivo nao encontrado: {caminho_foto}")
                 continue
             imagem_b64 = base64.b64encode(caminho_foto.read_bytes()).decode("ascii")
+            usou_comando_foto = True
             transcricao = " ".join(partes_cmd[1:]).strip() if len(partes_cmd) > 1 else "Olha aqui o que eu tô te mostrando!"
             print(f"[FOTO] Carregada: {caminho_foto.name} | pergunta: \"{transcricao}\"")
 
         if not transcricao:
             print("[MIC] Ouvindo... fale agora (para sozinho apos 1,2s de silencio).")
-            audio = stt.gravar_microfone()
-            if audio.size == 0:
+            audio_mic = stt.gravar_microfone()
+            if audio_mic.size == 0:
                 print("[MIC] Nenhuma fala detectada.")
                 continue
-            voice_id, voice_conf, _ = voz_bio.identificar(audio, sr=stt.sample_rate)
-            transcricao, backend_stt, lat_stt = stt.transcrever(audio, sr=stt.sample_rate)
+            voice_id, voice_conf, _ = voz_bio.identificar(audio_mic, sr=stt.sample_rate)
+            transcricao, backend_stt, lat_stt = stt.transcrever(audio_mic, sr=stt.sample_rate)
             print(f"[STT {backend_stt} | {lat_stt:.0f} ms]: \"{transcricao}\"")
             if voice_id != "desconhecido":
                 print(f"[VOZ] Locutor reconhecido pela voz: {voice_id} ({voice_conf:.2f})")
@@ -271,20 +371,28 @@ def main() -> None:
                 print("[AVISO] Nao consegui transcrever a fala.")
                 continue
 
-            # Auto-cadastro cruzado: se SFace conhece o rosto sozinho e a voz ainda nao estava boa
-            if face_simulada != "nenhuma":
-                pid_face = memoria.mapear_identificador(face_simulada.split("(")[0].strip())
-                if pid_face and pid_face != "desconhecido" and voice_id == "desconhecido":
-                    n = voz_bio.cadastrar_amostra(pid_face, audio, sr=stt.sample_rate)
-                    if n > 0:
-                        print(f"[AUTO-VOZ] Amostra vocal salva automaticamente para {pid_face} ({n} total).")
-
+        frame_cam_turno: Optional[str] = None
         face_turno = face_simulada
         if face_turno == "nenhuma" and imagem_b64:
             face_auto = motor.reconhecer_rosto_imagem_b64(imagem_b64)
             if face_auto != "nenhuma":
                 face_turno = face_auto
-                print(f"[SFACE] Rosto detectado automaticamente na imagem: {face_auto}")
+                print(f"[SFACE] Rosto detectado automaticamente na foto: {face_auto}")
+        elif face_turno == "nenhuma" and webcam_ativa:
+            frame_cam_turno = _capturar_webcam_b64(args.camera)
+            if frame_cam_turno:
+                face_auto = motor.reconhecer_rosto_imagem_b64(frame_cam_turno)
+                if face_auto != "nenhuma":
+                    face_turno = face_auto
+                    print(f"[SFACE CAM] Rosto detectado ao vivo: {face_auto}")
+
+        # Auto-cadastro cruzado: se SFace conhece o rosto sozinho e a voz ainda nao estava boa
+        if audio_mic is not None and face_turno != "nenhuma" and voice_id == "desconhecido":
+            pid_face = memoria.mapear_identificador(face_turno.split("(")[0].strip())
+            if pid_face and pid_face != "desconhecido":
+                n = voz_bio.cadastrar_amostra(pid_face, audio_mic, sr=stt.sample_rate)
+                if n > 0:
+                    print(f"[AUTO-VOZ] Amostra vocal salva automaticamente para {pid_face} ({n} total).")
 
         decisao_jev: Optional[DecisaoRoteador] = None
         if jev_online and not args.sem_jev:
@@ -308,13 +416,35 @@ def main() -> None:
                 print(f"[AVISO JEV] Falha ao consultar SystemOne ({exc}); seguindo direto para Persona.")
                 decisao_jev = None
 
+        precisa_imagem = (
+            usou_comando_foto
+            or bool(decisao_jev and decisao_jev.precisa_imagem_camera)
+            or parece_pedido_visual(transcricao)
+        )
+        imagem_para_llm = imagem_b64
+        if precisa_imagem and not imagem_para_llm:
+            if frame_cam_turno is None and webcam_ativa:
+                frame_cam_turno = _capturar_webcam_b64(args.camera)
+            imagem_para_llm = frame_cam_turno
+            if imagem_para_llm:
+                print("[CAM] Frame da webcam anexado ao turno visual.")
+
+        decisao_para_motor = decisao_jev
+        if (
+            precisa_imagem
+            and imagem_para_llm
+            and decisao_jev is not None
+            and decisao_jev.rota_final in ("ignorar", "pool_fala_pronta")
+        ):
+            decisao_para_motor = None
+
         resultado = motor.responder(
             transcricao=transcricao,
-            decisao_jev=decisao_jev,
+            decisao_jev=decisao_para_motor,
             face_id=face_turno,
             voice_id=voice_id,
             voice_conf=voice_conf,
-            imagem_jpeg_b64=imagem_b64,
+            imagem_jpeg_b64=imagem_para_llm,
         )
         print(
             f"[CONTEXTO] pessoa={resultado['pessoa_display']} | id={resultado['modo_identificacao']} "
@@ -324,6 +454,8 @@ def main() -> None:
             print(f"PETeleco: {resultado['resposta']}")
             if resultado["resposta_tts"] != resultado["resposta"]:
                 print(f"   [TTS]: {resultado['resposta_tts']}")
+            if tts_ativo:
+                _falar_tts_windows(resultado["resposta_tts"])
         else:
             print("[IGNORADO] Fala classificada como conversa paralela / ruido.")
 

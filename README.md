@@ -139,6 +139,7 @@ PETeleco/
 │   └── persona_peteleco.md     # System Prompt v3.1 (single source of truth for persona & memory)
 ├── data/
 │   ├── perfis_pessoas.json     # Hot profile cards & phonetic aliases for the PET lab team
+│   ├── known_faces.json        # SFace 128-D face embeddings (YuNet + SFace)
 │   └── known_voices.json       # Voice embedding database for camera-free speaker ID
 ├── docs/
 │   ├── context.md              # Continuous research memory & hardware constraints (EN)
@@ -173,9 +174,10 @@ PETeleco/
    ```powershell
    pip install -r requirements.txt
    ```
-4. Run the 36-case Layer 2 benchmark or launch the **interactive workbench (Voice + STT + Jev + Persona)**:
+4. Run the 36-case Layer 2 benchmark or launch the **full interactive workbench (Voice + Webcam + STT + Jev + Persona + Memory)**:
    ```powershell
    python src/benchmark_router.py --suite todas --rodadas 2
-   python -m src.testar_peteleco
+   python -m src.testar_peteleco --tts
    ```
+   - Inside the workbench: press `[ENTER]` on an empty line to speak on the microphone (with live webcam `YuNet + SFace` ID and automatic voice cross-enrollment), `/voz <name>` to record a voiceprint, `/cam` or `/foto <file> [prompt]` to test vision (`SFace` + Gemini), `/tts` to toggle Windows speech output, `/corpo <chao|bancada|no_colo>` for body awareness, and `/perfil` to inspect 3-tier memory. *(On first vision use without the sister `../rover` directory, `YuNet` and `SFace` ONNX weights download automatically to `models/`.)*
    > Inside the workbench: press empty `ENTER` to speak via microphone, `/voz caio` to enroll a 4 s voice sample, `/testar_voz` to inspect cosine similarity scores, `/corpo bancada` to test table-edge safety interlocks, and `/perfil` to inspect 3-tier memory updates.

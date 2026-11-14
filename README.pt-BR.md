@@ -139,6 +139,7 @@ PETeleco/
 │   └── persona_peteleco.md     # System Prompt v3.1 (fonte única da persona & memória)
 ├── data/
 │   ├── perfis_pessoas.json     # Ficha quente dos perfis e apelidos do PET Elétrica
+│   ├── known_faces.json        # Vetores faciais SFace 128-D (YuNet + SFace)
 │   └── known_voices.json       # Banco de embeddings vocais para identificação por voz
 ├── docs/
 │   ├── context.md              # Memória técnica contínua e restrições físicas (EN)
@@ -173,9 +174,10 @@ PETeleco/
    ```powershell
    pip install -r requirements.txt
    ```
-4. Rode o benchmark da Camada 2 (36 casos) ou a **bancada completa interativa (Voz + STT + Jev + Persona)**:
+4. Rode o benchmark da Camada 2 (36 casos) ou a **bancada completa interativa (Voz + Webcam + STT + Jev + Persona + Memória)**:
    ```powershell
    python src/benchmark_router.py --suite todas --rodadas 2
-   python -m src.testar_peteleco
+   python -m src.testar_peteleco --tts
    ```
+   - Na bancada: aperte `[ENTER]` vazio para falar no microfone (com reconhecimento de rosto via webcam e auto-cadastro de voz), use `/voz <nome>` para gravar referência vocal, `/cam` ou `/foto <arquivo> [pergunta]` para testar visão (`YuNet + SFace` + Gemini), `/tts` para falar no alto-falante, `/corpo <chao|bancada|no_colo>` para testar consciência corporal e `/perfil` para inspecionar a memória em 3 camadas. *(Na primeira chamada visual sem a pasta irmã `../rover`, `YuNet` e `SFace` ONNX são baixados automaticamente para `models/`.)*
    > Na bancada interativa: pressione `ENTER` vazio para falar no microfone, `/voz caio` para cadastrar sua voz em 4 segundos, `/testar_voz` para checar o reconhecimento vocal, `/corpo bancada` para testar a trava de altura e `/perfil` para inspecionar a evolução da memória.
