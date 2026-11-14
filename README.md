@@ -135,6 +135,11 @@ PETeleco/
 ├── AGENTS.md                   # AI engineering rules & shared Rover/PETeleco context (EN)
 ├── AGENTS.pt-BR.md             # Diretrizes para agentes & contexto paralelo (PT-BR)
 ├── requirements.txt            # Minimal Python dependencies (`requests` for L2)
+├── prompts/
+│   └── persona_peteleco.md     # System Prompt v3.1 (single source of truth for persona & memory)
+├── data/
+│   ├── perfis_pessoas.json     # Hot profile cards & phonetic aliases for the PET lab team
+│   └── known_voices.json       # Voice embedding database for camera-free speaker ID
 ├── docs/
 │   ├── context.md              # Continuous research memory & hardware constraints (EN)
 │   ├── context.pt-BR.md        # Memória técnica contínua e contexto físico (PT-BR)
@@ -142,13 +147,18 @@ PETeleco/
 │   └── ARCHITECTURE.pt-BR.md   # Protocolos, travas de segurança e modelos (PT-BR)
 └── src/
     ├── __init__.py
-    ├── router_systemone.py     # Layer 2 Jev-based cognitive router (/v1/systemone)
+    ├── escuta_stt.py           # Layer 1: Mic capture (VAD) + STT (faster-whisper / Gemini Audio)
+    ├── voz_biometria.py        # Layer 1: CPU Speaker Verification (camera-free voice ID)
+    ├── router_systemone.py     # Layer 2: Jev-based cognitive router (/v1/systemone)
+    ├── memoria_pessoas.py      # Layer 3: 3-tier memory (hot JSON card + cold SQLite)
+    ├── persona_peteleco.py     # Layer 3/4: Adaptive persona, body-state interlocks & Gemini REST
+    ├── testar_peteleco.py      # Interactive workbench (Voice + STT + Jev + Persona + Memory)
     └── benchmark_router.py     # 36-case isolated benchmark suite
 ```
 
 ---
 
-## 🚀 Quickstart (Layer 2 Router & Benchmark)
+## 🚀 Quickstart (Full Workbench + Layer 2 Benchmark)
 
 1. Install Ollama (`>= v0.35`, verified on `v0.40.16`) and pull `tev1:0.8b`:
    ```powershell
@@ -159,8 +169,13 @@ PETeleco/
    $env:OLLAMA_VULKAN="0"
    ollama serve
    ```
-3. Install dependencies and run the 36-case benchmark:
+3. Install Python dependencies and set `GEMINI_API_KEY` in a `.env` file (or reuse `../rover/.env`):
    ```powershell
    pip install -r requirements.txt
-   python src/benchmark_router.py --suite todas --rodadas 2
    ```
+4. Run the 36-case Layer 2 benchmark or launch the **interactive workbench (Voice + STT + Jev + Persona)**:
+   ```powershell
+   python src/benchmark_router.py --suite todas --rodadas 2
+   python -m src.testar_peteleco
+   ```
+   > Inside the workbench: press empty `ENTER` to speak via microphone, `/voz caio` to enroll a 4 s voice sample, `/testar_voz` to inspect cosine similarity scores, `/corpo bancada` to test table-edge safety interlocks, and `/perfil` to inspect 3-tier memory updates.

@@ -1,0 +1,197 @@
+{
+  "felipe_sass": {
+    "nome": "Felipe Sass",
+    "apelidos_stt": [
+      "Felipe Sass",
+      "Professor Felipe",
+      "Professor Sass",
+      "Sass",
+      "Felipe Sadi",
+      "Felipe Sas"
+    ],
+    "papel": "professor_orientador",
+    "nivel_intimidade": 2,
+    "tom_com_a_pessoa": "respeitoso_formal_objetivo",
+    "libera_palavrao": false,
+    "libera_zoeira_pesada": false,
+    "usa_bordao_chefe": false,
+    "tracos_personalidade": [
+      "Professor do Departamento de Engenharia Eletrica (TEE/UFF) e Tutor do PET Eletrica UFF",
+      "Pesquisador em Maquinas Eletricas e Supercondutividade Aplicada (Maglev / mancais supercondutores)",
+      "Tratar sempre com respeito, clareza tecnica e zero palavroes ou zoeira"
+    ],
+    "resumo_convivencia": "Tutor orientador do PET Eletrica UFF.",
+    "ultimos_episodios": []
+  },
+  "caio": {
+    "nome": "Caio",
+    "apelidos_stt": [
+      "Caio"
+    ],
+    "papel": "membro_pet_criador",
+    "nivel_intimidade": 5,
+    "tom_com_a_pessoa": "parceiro_bancada",
+    "libera_palavrao": true,
+    "libera_zoeira_pesada": true,
+    "usa_bordao_chefe": true,
+    "tracos_personalidade": [],
+    "resumo_convivencia": "Criador do Rover e do PETeleco. Ainda construindo historico de conversas.",
+    "ultimos_episodios": []
+  },
+  "iury": {
+    "nome": "Iury",
+    "apelidos_stt": [
+      "Iury",
+      "Yuri",
+      "Iuri"
+    ],
+    "papel": "membro_pet",
+    "nivel_intimidade": 3,
+    "tom_com_a_pessoa": "em_observacao",
+    "libera_palavrao": true,
+    "libera_zoeira_pesada": false,
+    "usa_bordao_chefe": true,
+    "tracos_personalidade": [],
+    "resumo_convivencia": "",
+    "ultimos_episodios": []
+  },
+  "jhonatan": {
+    "nome": "Jhonatan",
+    "apelidos_stt": [
+      "Jhonatan",
+      "Jonathan",
+      "veio",
+      "véio",
+      "jon jon",
+      "jhon jhon"
+    ],
+    "papel": "membro_pet",
+    "nivel_intimidade": 3,
+    "tom_com_a_pessoa": "em_observacao",
+    "libera_palavrao": true,
+    "libera_zoeira_pesada": false,
+    "usa_bordao_chefe": true,
+    "tracos_personalidade": [],
+    "resumo_convivencia": "",
+    "ultimos_episodios": []
+  },
+  "manuel": {
+    "nome": "Manuel",
+    "apelidos_stt": [
+      "Manuel",
+      "Manoel",
+      "Manel"
+    ],
+    "papel": "membro_pet",
+    "nivel_intimidade": 3,
+    "tom_com_a_pessoa": "em_observacao",
+    "libera_palavrao": true,
+    "libera_zoeira_pesada": false,
+    "usa_bordao_chefe": true,
+    "tracos_personalidade": [],
+    "resumo_convivencia": "",
+    "ultimos_episodios": []
+  },
+  "heitor": {
+    "nome": "Heitor",
+    "apelidos_stt": [
+      "Heitor",
+      "to2",
+      "tô dois",
+      "todos"
+    ],
+    "papel": "membro_pet",
+    "nivel_intimidade": 3,
+    "tom_com_a_pessoa": "em_observacao",
+    "libera_palavrao": true,
+    "libera_zoeira_pesada": false,
+    "usa_bordao_chefe": true,
+    "tracos_personalidade": [],
+    "resumo_convivencia": "",
+    "ultimos_episodios": []
+  },
+  "luigi": {
+    "nome": "Luigi",
+    "apelidos_stt": [
+      "Luigi",
+      "luígui",
+      "luigui"
+    ],
+    "papel": "membro_pet",
+    "nivel_intimidade": 3,
+    "tom_com_a_pessoa": "em_observacao",
+    "libera_palavrao": true,
+    "libera_zoeira_pesada": false,
+    "usa_bordao_chefe": true,
+    "tracos_personalidade": [],
+    "resumo_convivencia": "",
+    "ultimos_episodios": []
+  },
+  "livia": {
+    "nome": "Lívia",
+    "apelidos_stt": [
+      "Lívia",
+      "Livia"
+    ],
+    "papel": "membro_pet",
+    "nivel_intimidade": 3,
+    "tom_com_a_pessoa": "em_observacao",
+    "libera_palavrao": true,
+    "libera_zoeira_pesada": false,
+    "usa_bordao_chefe": true,
+    "tracos_personalidade": [],
+    "resumo_convivencia": "",
+    "ultimos_episodios": []
+  },
+  "nathan": {
+    "nome": "Nathan",
+    "apelidos_stt": [
+      "Nathan",
+      "Natan",
+      "nata",
+      "natã"
+    ],
+    "papel": "membro_pet",
+    "nivel_intimidade": 3,
+    "tom_com_a_pessoa": "em_observacao",
+    "libera_palavrao": true,
+    "libera_zoeira_pesada": false,
+    "usa_bordao_chefe": true,
+    "tracos_personalidade": [],
+    "resumo_convivencia": "",
+    "ultimos_episodios": []
+  },
+  "knust": {
+    "nome": "Knust",
+    "apelidos_stt": [
+      "Knust",
+      "guinust",
+      "guinuxi",
+      "kinust"
+    ],
+    "papel": "membro_pet",
+    "nivel_intimidade": 3,
+    "tom_com_a_pessoa": "em_observacao",
+    "libera_palavrao": true,
+    "libera_zoeira_pesada": false,
+    "usa_bordao_chefe": true,
+    "tracos_personalidade": [],
+    "resumo_convivencia": "",
+    "ultimos_episodios": []
+  },
+  "desconhecido": {
+    "nome": "desconhecido",
+    "apelidos_stt": [],
+    "papel": "visitante_nao_cadastrado",
+    "nivel_intimidade": 1,
+    "tom_com_a_pessoa": "amigavel_observador",
+    "libera_palavrao": false,
+    "libera_zoeira_pesada": false,
+    "usa_bordao_chefe": true,
+    "tracos_personalidade": [
+      "Ainda nao identificado por rosto ou voz; conversar normalmente e aprender seu estilo aos poucos"
+    ],
+    "resumo_convivencia": "",
+    "ultimos_episodios": []
+  }
+}

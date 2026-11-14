@@ -135,6 +135,11 @@ PETeleco/
 ├── AGENTS.md                   # Diretrizes para agentes & contexto paralelo (EN)
 ├── AGENTS.pt-BR.md             # Diretrizes para agentes & contexto paralelo (PT-BR)
 ├── requirements.txt            # Dependências mínimas (`requests` para C2)
+├── prompts/
+│   └── persona_peteleco.md     # System Prompt v3.1 (fonte única da persona & memória)
+├── data/
+│   ├── perfis_pessoas.json     # Ficha quente dos perfis e apelidos do PET Elétrica
+│   └── known_voices.json       # Banco de embeddings vocais para identificação por voz
 ├── docs/
 │   ├── context.md              # Memória técnica contínua e restrições físicas (EN)
 │   ├── context.pt-BR.md        # Memória técnica contínua e restrições físicas (PT-BR)
@@ -142,13 +147,18 @@ PETeleco/
 │   └── ARCHITECTURE.pt-BR.md   # Protocolos, travas e modelos (Português-BR)
 └── src/
     ├── __init__.py
+    ├── escuta_stt.py           # Camada 1: Microfone (VAD) + STT (faster-whisper / Gemini Audio)
+    ├── voz_biometria.py        # Camada 1: Speaker Verification na CPU (sem câmera)
     ├── router_systemone.py     # Camada 2: Roteador cognitivo Jev-based (/v1/systemone)
+    ├── memoria_pessoas.py      # Camada 3: Memória em 3 camadas (JSON quente + SQLite frio)
+    ├── persona_peteleco.py     # Camada 3/4: Motor da persona, estado corporal e Gemini REST
+    ├── testar_peteleco.py      # Bancada interativa completa (Voz + STT + Jev + Persona)
     └── benchmark_router.py     # Bateria de benchmark isolado (36 casos)
 ```
 
 ---
 
-## 🚀 Como Rodar Agora (Camada 2 + Benchmark)
+## 🚀 Como Rodar Agora (Bancada Completa + Camada 2)
 
 1. Instale o Ollama (`>= v0.35`, testado na `v0.40.16`) e baixe o modelo `tev1:0.8b`:
    ```powershell
@@ -159,8 +169,13 @@ PETeleco/
    $env:OLLAMA_VULKAN="0"
    ollama serve
    ```
-3. Instale a dependência e execute o benchmark completo:
+3. Instale as dependências Python e configure `GEMINI_API_KEY` num arquivo `.env` na raiz (ou use o `.env` compartilhado na pasta irmã `../rover/.env`):
    ```powershell
    pip install -r requirements.txt
-   python src/benchmark_router.py --suite todas --rodadas 2
    ```
+4. Rode o benchmark da Camada 2 (36 casos) ou a **bancada completa interativa (Voz + STT + Jev + Persona)**:
+   ```powershell
+   python src/benchmark_router.py --suite todas --rodadas 2
+   python -m src.testar_peteleco
+   ```
+   > Na bancada interativa: pressione `ENTER` vazio para falar no microfone, `/voz caio` para cadastrar sua voz em 4 segundos, `/testar_voz` para checar o reconhecimento vocal, `/corpo bancada` para testar a trava de altura e `/perfil` para inspecionar a evolução da memória.
