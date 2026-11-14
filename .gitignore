@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+
+# Virtual environments & secrets
+.venv/
+venv/
+env/
+.env
+.env.*
+
+# Runtime outputs, local models & private biometric/memory stores
+results/
+scratch/
+models/
+audio_cache/
+*.onnx
+*.gguf
+*.bin
+*.pt
+*.db
+*.sqlite
+*.wav
+*.log
+known_faces.json
+
+# OS & IDEs
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

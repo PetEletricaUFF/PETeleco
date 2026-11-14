@@ -1,0 +1,15 @@
+# Core dependency for Layer 2 (Jev-based HTTP SystemOne Router + Benchmark)
+requests>=2.31.0
+
+# ---------------------------------------------------------------------------
+# Planned incremental layers (uncomment as each layer is implemented):
+# Layer 1 — Local Speech Listening (VAD + STT)
+# faster-whisper>=1.0.0
+# silero-vad
+# sounddevice
+# numpy
+#
+# Layer 3 — Local Vision, Biometrics & TTS (inspired by CaioHVectorA/Rover)
+# opencv-python>=4.9.0
+# piper-tts
+# ---------------------------------------------------------------------------
