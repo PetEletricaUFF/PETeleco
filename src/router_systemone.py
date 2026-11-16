@@ -12,14 +12,23 @@ Desacoplado de microfone, TTS, UDP e Gemini para permitir reuso entre camadas
 """
 
 from dataclasses import dataclass, field
+import json
+import re
 import time
 from typing import Any, Dict, Optional
+import unicodedata
 
 import requests
 
 
 DEFAULT_OLLAMA_URL = "http://localhost:11434"
 DEFAULT_MODEL = "tev1:0.8b"
+
+
+def _norm_simples(texto: str) -> str:
+    decomp = unicodedata.normalize("NFKD", texto or "")
+    sem = "".join(c for c in decomp if not unicodedata.combining(c))
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9\s]", " ", sem.lower())).strip()
 
 _MAPA_ESTADO_ROVER = {
     "STANDBY": "idle_ready (motors off, waiting)",
@@ -40,16 +49,20 @@ class ContextoRover:
     estado_rover: str = "STANDBY"
     pessoa_sface: str = "nenhuma"
     objetos_yolo: str = "nenhum"
+    modo_escuta_ativa: bool = False
 
     def formatar_state(self) -> str:
         """Formata o estado estruturado enviado ao campo `state` do SystemOne."""
         estado_desc = _MAPA_ESTADO_ROVER.get(self.estado_rover, self.estado_rover)
-        return (
+        base = (
             f'USER_SPEECH (pt-BR): "{self.transcricao.strip()}"\n'
             f"CURRENT_ROVER_MODE: {estado_desc}\n"
             f"LOCAL_FACE_ID (SFace): {self.pessoa_sface}\n"
             f"LOCAL_OBJECTS_SEEN (YOLO): {self.objetos_yolo}"
         )
+        if self.modo_escuta_ativa:
+            base += "\nACTIVE_LISTENING: true (user already woke PETeleco, treat speech as directed at robot)"
+        return base
 
 
 @dataclass
@@ -119,20 +132,20 @@ def construir_perguntas_rover() -> Dict[str, Any]:
         },
         "pool_fala_pronta": {
             "type": "choice",
-            "instructions": "If USER_SPEECH is a short social utterance, which canned audio category fits?",
+            "instructions": "If USER_SPEECH is a short social utterance (and NOT a request for a joke, explanation, or command), which canned category fits?",
             "criteria": {
-                "saudacao": "Greeting like oi, ola, bom dia, boa tarde, tudo bem.",
+                "saudacao": "Pure greeting ONLY like oi, ola, bom dia, boa tarde, tudo bem. NOT a movement command like vamos para a frente.",
                 "despedida": "Farewell like tchau, ate logo, ate amanha.",
                 "ok_confirmacao": "Short confirmation like sim, ok, beleza, pode ir, entendi, confirmar.",
-                "elogio_agradecimento": "Thanks, praise, approval, or enthusiastic positive reaction/compliment about performance (e.g. obrigado, valeu, gostei, excelente).",
-                "nenhuma": "Not a simple social phrase (it is a command, telemetry question, complex question, or side chatter).",
+                "elogio_agradecimento": "Short thank-you or praise of the robot's action ONLY (e.g. obrigado, valeu, mandou bem). NOT asking for a joke, story, or help.",
+                "nenhuma": "Not a simple social phrase (it is a command, request for joke/story, telemetry question, complex question, or side chatter).",
             },
         },
         "fala_parametrizada": {
             "type": "choice",
             "instructions": "Does USER_SPEECH ask for one of these four deterministic local values?",
             "criteria": {
-                "hora_atual": "Asking what time of day or calendar date it is right now.",
+                "hora_atual": "Asking what time of day, weekday, or calendar date it is right now (e.g. que horas sao, que dia e hoje).",
                 "previsao_clima": "Asking for the current weather, rain forecast, or whether it is cold/hot/sunny outside right now.",
                 "bateria_temp": "Asking about the robot's battery level, voltage, or hardware temperature.",
                 "quem_vejo_agora": "Asking who the person in front of the robot is or if the robot recognizes them.",
@@ -147,7 +160,7 @@ def construir_perguntas_rover() -> Dict[str, Any]:
             ),
             "criteria": {
                 "seguir_rosto": "Command to follow the speaker/user or accompany/track a person or face as they move (e.g. seguir, acompanhar).",
-                "ir_ate_objeto": "Command to move toward, approach, drive up to, or get closer to a specific object or furniture (e.g. ir ate, aproximar, chegar perto).",
+                "ir_ate_objeto": "Command to move/drive forward, backward, turn, approach, drive up to, or go closer to a target or location (e.g. ir ate, aproximar, chegar perto, vamos para a frente, anda pra frente, da re).",
                 "parar": "Explicit command to stop, halt, brake, or cut motors immediately.",
                 "radar": "Command to search, scan, look around, or rotate the camera head to find a target.",
                 "nenhuma": "Does not command physical movement, stopping, or camera scanning (greetings, questions, facts, or chatter).",
@@ -158,7 +171,7 @@ def construir_perguntas_rover() -> Dict[str, Any]:
             "instructions": "If complex cloud cognition is needed, what kind of request is USER_SPEECH?",
             "criteria": {
                 "descrever_cena": "Asking what the robot sees on the table/scene, reading written text, or visual inspection.",
-                "conversa_aberta": "Technical explanation, conceptual question, or open-ended conversation.",
+                "conversa_aberta": "Technical explanation, conceptual question, telling jokes, chatting, or open-ended conversation.",
                 "nenhuma": "Can be handled locally without cloud LLM/VLM.",
             },
         },
@@ -254,8 +267,10 @@ class RoteadorSystemOne:
         pool_choice, pool_prob = self._melhor_subtipo(answers.get("pool_fala_pronta", {}))
         gem_choice, gem_prob = self._melhor_subtipo(answers.get("cognicao_gemini", {}))
 
+        norm_speech = _norm_simples(contexto.transcricao)
+
         # Trava de emergencia: parada explicita com alta confianca vence mesmo em fala rapida
-        if acao_choice == "parar" and acao_prob >= 0.90 and p_dirigido >= 0.50:
+        if acao_choice == "parar" and acao_prob >= 0.90 and (p_dirigido >= 0.50 or contexto.modo_escuta_ativa):
             return DecisaoRoteador(
                 rota_final="acao_rover",
                 subtipo="parar",
@@ -268,24 +283,25 @@ class RoteadorSystemOne:
                 respostas_brutas=answers,
             )
 
-        # Filtro combinado de escuta: noul baixo ou rota_principal forte em ignorar
+        # Filtro combinado de escuta: desativado em Modo Escuta Ativa (pos wake-word)
         p_ignorar = float(rota_probs.get("ignorar", 0.0))
-        if (
-            p_dirigido < 0.35
-            or (p_dirigido < self.limiar_dirigido and p_ignorar >= 0.35)
-            or (p_ignorar >= 0.65 and p_dirigido < 0.75)
-            or (p_ignorar >= 0.55 and p_dirigido < 0.65)
-        ):
-            return DecisaoRoteador(
-                rota_final="ignorar",
-                subtipo="conversa_paralela_ou_ruido",
-                confianca=max(1.0 - p_dirigido, p_ignorar),
-                dirigido_ao_robo=p_dirigido,
-                precisa_imagem_camera=False,
-                prob_imagem_camera=p_imagem,
-                latencia_ms=latencia_ms,
-                respostas_brutas=answers,
-            )
+        invocou_robo = any(w in norm_speech for w in ("peteleco", "pe teleco", "teleco", "robo"))
+        if not contexto.modo_escuta_ativa and not invocou_robo:
+            if (
+                p_dirigido < 0.35
+                or (p_dirigido < self.limiar_dirigido and p_ignorar >= 0.50)
+                or (p_ignorar >= 0.85 and p_dirigido < 0.65)
+            ):
+                return DecisaoRoteador(
+                    rota_final="ignorar",
+                    subtipo="conversa_paralela_ou_ruido",
+                    confianca=max(1.0 - p_dirigido, p_ignorar),
+                    dirigido_ao_robo=p_dirigido,
+                    precisa_imagem_camera=False,
+                    prob_imagem_camera=p_imagem,
+                    latencia_ms=latencia_ms,
+                    respostas_brutas=answers,
+                )
 
         # Caso rota_principal tenha empatado abaixo de 0.50 em ignorar, usa a melhor camada ativa
         if rota_choice == "ignorar":
@@ -297,6 +313,25 @@ class RoteadorSystemOne:
             if candidatas:
                 rota_choice = max(candidatas, key=candidatas.get)
                 rota_prob = candidatas[rota_choice]
+
+        parece_movimento_livre = any(
+            kw in norm_speech
+            for kw in (
+                "para a frente",
+                "pra frente",
+                "para frente",
+                "vai pra frente",
+                "anda pra frente",
+                "vamos para frente",
+                "vamos para a frente",
+                "para tras",
+                "pra tras",
+                "da re",
+                "dar re",
+                "vira pra esquerda",
+                "vira pra direita",
+            )
+        )
 
         if rota_choice == "acao_rover":
             if acao_choice != "nenhuma":
@@ -312,20 +347,23 @@ class RoteadorSystemOne:
                     latencia_ms=latencia_ms,
                     respostas_brutas=answers,
                 )
-            # Se rota_principal tem altissima confianca de acao fisica e uma subacao clara aparece (>= 0.25),
-            # escala para confirmacao de seguranca em vez de descartar silenciosamente.
+            # Se rota_principal indicou acao fisica e uma subacao clara ou movimento livre aparece,
+            # escala em vez de descartar silenciosamente para saudacao falsa.
             acao_probs = answers.get("acao_rover", {}).get("probabilities") or {}
             acoes_validas = {k: float(v) for k, v in acao_probs.items() if k != "nenhuma"}
-            if acoes_validas and rota_prob >= 0.90 and p_dirigido >= 0.65:
-                sub_acao = max(acoes_validas, key=acoes_validas.get)
-                sub_prob = acoes_validas[sub_acao]
-                if sub_prob >= 0.25:
+            if acoes_validas and (
+                (rota_prob >= 0.90 and (p_dirigido >= 0.65 or contexto.modo_escuta_ativa))
+                or (rota_prob >= 0.65 and parece_movimento_livre)
+            ):
+                sub_acao = "ir_ate_objeto" if parece_movimento_livre else max(acoes_validas, key=acoes_validas.get)
+                sub_prob = max(acoes_validas.get(sub_acao, 0.0), rota_prob * 0.7 if parece_movimento_livre else 0.0)
+                if sub_prob >= 0.25 or parece_movimento_livre:
                     return DecisaoRoteador(
                         rota_final="acao_rover",
                         subtipo=sub_acao,
                         confianca=sub_prob,
                         dirigido_ao_robo=p_dirigido,
-                        requer_confirmacao=True,
+                        requer_confirmacao=not parece_movimento_livre,
                         precisa_imagem_camera=False,
                         prob_imagem_camera=p_imagem,
                         latencia_ms=latencia_ms,
@@ -336,7 +374,7 @@ class RoteadorSystemOne:
             outras = {
                 k: float(v)
                 for k, v in rota_probs.items()
-                if k != "acao_rover"
+                if k != "acao_rover" and (not contexto.modo_escuta_ativa or k != "ignorar")
             }
             if outras:
                 rota_choice = max(outras, key=outras.get)
@@ -352,6 +390,27 @@ class RoteadorSystemOne:
                         latencia_ms=latencia_ms,
                         respostas_brutas=answers,
                     )
+
+        # Fallback fonetico para consulta de data quando STT engole "dia" -> "que de hoje"
+        if any(f in norm_speech for f in ("que dia e hoje", "que de hoje", "que dia hoje", "data de hoje")):
+            return DecisaoRoteador(
+                rota_final="fala_parametrizada",
+                subtipo="hora_atual",
+                confianca=max(param_prob, 0.90),
+                dirigido_ao_robo=max(p_dirigido, 0.90),
+                precisa_imagem_camera=False,
+                prob_imagem_camera=p_imagem,
+                latencia_ms=latencia_ms,
+                respostas_brutas=answers,
+            )
+
+        # Guardrail para pedidos abertos (ex.: "conta uma piada boa ai") nao cairem em elogio/saudacao pronta
+        parece_pedido_aberto = any(
+            kw in norm_speech
+            for kw in ("piada", "historia", "explica", "como funciona", "por que", "o que e", "zoeira", "conta uma")
+        )
+        if rota_choice == "pool_fala_pronta" and parece_pedido_aberto:
+            rota_choice = "cognicao_gemini"
 
         # Desempate por especialidade: consulta deterministica forte (hora/clima/bateria/rosto)
         # prevalece sobre confusao de rota_principal com social curto ou Gemini vago
@@ -422,3 +481,111 @@ class RoteadorSystemOne:
         """Retorna o subtipo escolhido e sua probabilidade calibrada."""
         choice = str(answer.get("choice", "nenhuma"))
         return choice, cls._prob_da_escolha(answer, choice)
+
+    def decidir_gemini(
+        self,
+        contexto: ContextoRover,
+        api_key: str,
+        model: str = "gemini-3.5-flash-lite",
+        timeout_s: float = 8.0,
+    ) -> Optional[DecisaoRoteador]:
+        """
+        Roteador rapido via Gemini JSON (~500 ms em maquinas sem GPU CUDA),
+        mantendo o mesmo contrato `DecisaoRoteador` + travas fisicas e `modo_escuta_ativa`.
+        """
+        key = (api_key or "").strip()
+        if not key:
+            return None
+
+        norm_speech = _norm_simples(contexto.transcricao)
+        if any(f in norm_speech for f in ("que dia e hoje", "que de hoje", "que dia hoje", "data de hoje")):
+            return DecisaoRoteador(
+                rota_final="fala_parametrizada",
+                subtipo="hora_atual",
+                confianca=0.96,
+                dirigido_ao_robo=0.98,
+                precisa_imagem_camera=False,
+                prob_imagem_camera=0.02,
+                latencia_ms=1.0,
+                respostas_brutas={"router_backend": "fast_rule:data_hoje"},
+            )
+
+        rotas_validas = {
+            "ignorar": ["conversa_paralela_ou_ruido"],
+            "pool_fala_pronta": ["saudacao", "despedida", "ok_confirmacao", "elogio_agradecimento"],
+            "fala_parametrizada": ["hora_atual", "previsao_clima", "bateria_temp", "quem_vejo_agora"],
+            "acao_rover": ["seguir_rosto", "ir_ate_objeto", "parar", "radar"],
+            "cognicao_gemini": ["descrever_cena", "conversa_aberta"],
+        }
+        prompt = (
+            "Voce e o roteador de intencoes do robo PETeleco (em portugues BR). "
+            "Classifique USER_SPEECH no formato JSON exato.\n"
+            f"ESTADO:\n{contexto.formatar_state()}\n\n"
+            "Regras:\n"
+            "- Se ACTIVE_LISTENING=true ou mencionar 'PETeleco'/'robo', NUNCA escolha 'ignorar'.\n"
+            "- 'vamos para a frente', 'anda', 'chega perto', 'vira', 'da re', 'me segue', 'para tudo', 'procura': rota 'acao_rover'.\n"
+            "- Pedidos de hora/data ('que dia e hoje', 'que horas sao'), bateria/temperatura, clima ou 'quem sou eu': rota 'fala_parametrizada'.\n"
+            "- Despedida ('tchau', 'pode dormir', 'encerrar escuta') ou confirmacao seca ('sim', 'pode ir', 'confirmo' em AGUARDANDO_CONFIRMACAO): rota 'pool_fala_pronta' (NUNCA classifique apenas 'PETeleco' como despedida).\n"
+            "- Cumprimentos com assunto, zoeira, piada, bate-papo, perguntas abertas ou visao ('olha isso', 'o que voce ve'): rota 'cognicao_gemini' "
+            "(para que o PETeleco responda de forma organica e bem-humorada ao vivo!).\n"
+            "- Escolha 'ignorar' apenas se ACTIVE_LISTENING nao estiver ativo e for conversa clara entre terceiros ou TV.\n\n"
+            'Retorne APENAS JSON valido: {"rota": str, "subtipo": str, "confianca": float, '
+            '"dirigido_ao_robo": float, "precisa_imagem": bool, "requer_confirmacao": bool}'
+        )
+        t0 = time.perf_counter()
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "temperature": 0.0,
+                "maxOutputTokens": 180,
+                "responseMimeType": "application/json",
+            },
+        }
+        try:
+            resp = self._session.post(url, json=payload, timeout=timeout_s)
+            resp.raise_for_status()
+            lat_ms = (time.perf_counter() - t0) * 1000.0
+            partes = resp.json().get("candidates", [{}])[0].get("content", {}).get("parts", [])
+            raw_txt = "".join(str(p.get("text", "")) for p in partes if not p.get("thought")).strip()
+            dados = json.loads(raw_txt)
+        except Exception:
+            return None
+
+        rota = str(dados.get("rota", "cognicao_gemini")).strip()
+        if rota not in rotas_validas:
+            rota = "cognicao_gemini"
+        if rota == "ignorar" and contexto.modo_escuta_ativa:
+            rota = "cognicao_gemini"
+
+        subtipo = str(dados.get("subtipo", rotas_validas[rota][0])).strip()
+        if subtipo not in rotas_validas[rota]:
+            subtipo = rotas_validas[rota][-1] if rota == "cognicao_gemini" else rotas_validas[rota][0]
+
+        conf = min(1.0, max(0.0, float(dados.get("confianca", 0.9))))
+        dirig = min(1.0, max(0.0, float(dados.get("dirigido_ao_robo", 0.95))))
+        if contexto.modo_escuta_ativa:
+            dirig = max(dirig, 0.95)
+        precisa_img = bool(dados.get("precisa_imagem", subtipo == "descrever_cena"))
+        req_conf = bool(dados.get("requer_confirmacao", False))
+        if rota != "acao_rover" or subtipo == "parar":
+            req_conf = False
+
+        probs_fake = {k: (conf if k == rota else round((1.0 - conf) / 4.0, 4)) for k in rotas_validas}
+        return DecisaoRoteador(
+            rota_final=rota,
+            subtipo=subtipo,
+            confianca=conf,
+            dirigido_ao_robo=dirig,
+            requer_confirmacao=req_conf,
+            precisa_imagem_camera=precisa_img,
+            prob_imagem_camera=0.92 if precisa_img else 0.05,
+            latencia_ms=lat_ms,
+            respostas_brutas={
+                "router_backend": f"gemini_router({model})",
+                "rota_principal": {"choice": rota, "probabilities": probs_fake, "confidence": conf},
+                "dirigido_ao_robo": {"noul": dirig},
+                "precisa_imagem_camera": {"noul": 0.92 if precisa_img else 0.05},
+                rota: {"choice": subtipo, "probabilities": {subtipo: conf}, "confidence": conf},
+            },
+        )

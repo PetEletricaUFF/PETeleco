@@ -24,11 +24,11 @@ Both repositories share the **same physical robot hardware and host inference ma
 Sending every detected phrase and camera frame directly to a cloud LLM/VLM makes a physical robot slow, expensive, and unsafe around motors (plus noisy when reacting to background chatter or TV audio).
 
 PETeleco solves this with a **5-layer hierarchical pipeline**:
-1. **Local-first triage (R$ 0 / low latency):** A tiny local SystemOne router evaluates ambient speech + live sensor state in **~353 ms** (`p50`) before deciding whether the robot was even addressed.
-2. **Persona immediacy (`0 ms` TTS):** Greetings, farewells, confirmations, and praise trigger pre-recorded persona `.wav` clips instead of waiting on neural speech synthesis or cloud APIs.
-3. **Deterministic skills + Local TTS:** Time, weather, battery/temperature telemetry, and active face identity query local deterministic handlers and speak via local CPU **`Piper TTS`**.
+1. **Local-first triage & Wake-word gating (R$ 0 / low latency):** In continuous hands-free listening, *"Standby"* ignores ambient chatter until `"PETeleco"` triggers a rolling **60 s Active Listening** window. On RTX 3050 CUDA, SystemOne (`tev1:0.8b`) routes speech in **~353 ms** (`p50`); on CPU-only laptops (`--roteador auto`), a fast `Gemini Flash-Lite` JSON router runs in `~0.7–1.9 s` vs `~10–20 s` on CPU Ollama.
+2. **Persona immediacy (`0 ms` TTS):** Greetings, wake-word acknowledgments, farewells, and confirmations trigger short persona responses / optional `.wav` clips without waiting on open LLM generation.
+3. **Deterministic skills + Natural PT-BR TTS:** Date/time, weather, battery/temperature, and active face identity query local deterministic handlers and speak via neural **`Edge TTS`** (`pt-BR-AntonioNeural`, calm live-chat pacing) or **`Gemini TTS`**, with offline CPU **`Piper TTS`** fallback.
 4. **Probabilistic motor safety interlocks:** Physical movement commands require high calibrated confidence (`>= 0.80` direct execution; `0.50–0.79` confirmation prompt; explicit emergency stop `>= 0.90` immediate cut).
-5. **Cloud escalation strictly on demand:** Multimodal cloud cognition (`Gemini`) is invoked only when a visual scene description or open-ended conceptual answer is genuinely needed.
+5. **Cloud escalation strictly on demand:** Multimodal cloud cognition (`Gemini`) is invoked only when a visual scene description or open-ended conversational answer is genuinely needed.
 
 ---
 
@@ -87,9 +87,9 @@ Designed to keep **all active local models resident inside 8 GB VRAM** (host tar
 
 | Layer | Component / Model | Role | Host / Runtime | Status |
 |---|---|---|---|---|
-| **L1 (Audio)** | `RMS VAD` + `faster-whisper` (`small` CUDA / `base` CPU) | Continuous PT-BR transcription + `torchaudio_192d` voice ID | CPU / GPU CUDA (`auto`) | **✅ Implemented & Tested** |
-| **L2 (Router)** | **`tev1:0.8b`** (`772.85M`, `Q8_0`, `qwen35`) | Parallel `noul`/`choice` routing via `/v1/systemone` | Ollama CUDA (`1245.7 MiB`) or CPU | **✅ Implemented & Benchmarked** |
-| **L3 (Speech)** | **`Piper TTS`** (`pt_BR-faber-medium`) + OS fallback | Offline PT-BR voice synthesis via `sounddevice` / Pulse / ALSA | CPU (`~0 GB` VRAM) | **✅ Implemented & Tested** |
+| **L1 (Audio)** | `RMS VAD (450 ms pre-roll)` + `Gemini Audio STT` / `faster-whisper` (`small`) + `"PETeleco"` Wake-word | Continuous PT-BR transcription (`Standby <-> 60 s Active Listening`) + `torchaudio_192d` voice ID | Cloud STT / CPU / CUDA (`auto`) | **✅ Implemented & Tested** |
+| **L2 (Router)** | **`tev1:0.8b`** (`772.85M`, `Q8_0`, `/v1/systemone`) + fast `Gemini Flash-Lite` JSON (`auto` CPU) | Parallel `noul`/`choice` routing (`CUDA`) or sub-second JSON triage (`CPU`) | Ollama CUDA (`1245.7 MiB`) / API | **✅ Implemented & Benchmarked** |
+| **L3 (Speech)** | **`Edge Neural TTS`** (`pt-BR-AntonioNeural`) / `Gemini TTS` + **`Piper TTS`** offline fallback | Natural PT-BR conversational speech synthesis via `sounddevice` / Pulse / ALSA | Online Neural / Offline CPU (`~0 GB` VRAM) | **✅ Implemented & Tested** |
 | **L3 (Vision)** | `YuNet` + `SFace` (ONNX, `128-D`) + `WebcamLive` HUD | Face biometric ID (`cosine >= 0.363`) & live `--preview` HUD | Local OpenCV ONNX | **✅ Implemented (`Rover` + `PETeleco`)** |
 | **L3 (Vision)** | `YOLOv8n` + `MediaPipe Hands` | Object detection, trekking FSM & gestures | Local Python / ONNX | Validated in `Rover` |
 | **L3 (Memory)** | 3-Tier `SQLite` / `JSON` Store | Hot profile cards & episodic logs per recognized person | Local Disk (`data/`) | **✅ Implemented & Tested** |
@@ -148,14 +148,16 @@ PETeleco/
 │   └── ARCHITECTURE.pt-BR.md   # Protocolos, travas de segurança e modelos (PT-BR)
 └── src/
     ├── __init__.py
-    ├── escuta_stt.py           # Layer 1: Mic capture (VAD + resample) + STT (faster-whisper / Gemini)
+    ├── escuta_stt.py           # Layer 1: Mic capture (pre-roll VAD) + STT (Gemini Audio / faster-whisper small)
     ├── voz_biometria.py        # Layer 1: CPU Speaker Verification (`torchaudio_192d`)
-    ├── router_systemone.py     # Layer 2: Jev-based cognitive router (/v1/systemone)
+    ├── router_systemone.py     # Layer 2: Jev (`/v1/systemone`) + fast Gemini Flash-Lite router + Active Listening gate
     ├── memoria_pessoas.py      # Layer 3: 3-tier memory (hot JSON card + cold SQLite)
-    ├── tts_local.py            # Layer 3: Offline Piper TTS + OS fallbacks (Linux / Windows)
+    ├── tts_local.py            # Layer 3: Edge Neural / Gemini TTS + offline Piper TTS fallback
     ├── visao_webcam.py         # Layer 3: Thread-safe WebcamLive capture + YuNet/SFace HUD
     ├── persona_peteleco.py     # Layer 3/4: Adaptive persona, body-state interlocks & Gemini REST
-    ├── testar_peteleco.py      # Live simulator & workbench (Webcam + Voice + STT + Jev + TTS)
+    ├── testar_peteleco.py      # Live simulator & workbench (CLI + --ui)
+    ├── ui_peteleco.py          # Local Web UI (MJPEG YuNet+SFace + SSE under-the-hood trace)
+    ├── static/ui_peteleco.html # Dependency-free Web UI frontend
     └── benchmark_router.py     # 36-case isolated benchmark suite
 ```
 
@@ -183,28 +185,29 @@ PETeleco/
      python3 -m venv .venv
      source .venv/bin/activate
      pip install --index-url https://download.pytorch.org/whl/cpu torch torchaudio
-     pip install -r requirements.txt numpy sounddevice faster-whisper opencv-python piper-tts
+     pip install -r requirements.txt numpy sounddevice faster-whisper opencv-python piper-tts edge-tts
      ```
      *(If using `uv`: `uv pip install --python .venv/bin/python ...`)*
    - **Windows (NVIDIA CUDA):**
      ```powershell
      python -m venv .venv
      .\.venv\Scripts\Activate.ps1
-     pip install -r requirements.txt numpy sounddevice faster-whisper opencv-python piper-tts
+     pip install -r requirements.txt numpy sounddevice faster-whisper opencv-python piper-tts edge-tts
      pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu124
      ```
-4. *(Optional for Layer 4 `cognicao_gemini` cloud escalation)* Copy `.env.example` to `.env` (or reuse `../rover/.env`) and set `GEMINI_API_KEY`. Without a key, all local layers (`pool_fala_pronta`, `fala_parametrizada`, `acao_rover` table-edge safety interlocks, `YuNet+SFace` webcam ID, `Whisper`, and `Piper TTS`) run 100% offline.
-5. Launch the **full live webcam + microphone + TTS simulator** or the Layer 2 benchmark:
+4. *(Recommended for Layer 1/2/4 `Gemini` STT, fast CPU routing & cloud VLM; offline mode also works)* Copy `.env.example` to `.env` (or reuse `../rover/.env`) and set `GEMINI_API_KEY`. Without a key, local layers (`pool_fala_pronta`, `fala_parametrizada`, `acao_rover` table-edge safety interlocks, `YuNet+SFace`, local `faster-whisper small`, `tev1:0.8b`, and `Piper TTS`) still run 100% offline.
+5. Launch the **live Web UI (MJPEG webcam with YuNet+SFace + Under-the-Hood telemetry + Escuta Ativa + Natural PT-BR TTS)** or the CLI workbench:
    ```bash
-   # Hands-free continuous simulation with live webcam HUD + Piper TTS output:
-   python -m src.testar_peteleco --preview --continuo --tts
+   # Local Web UI (auto-starts local Ollama, opens browser + webcam + engine selectors):
+   python -m src.ui_peteleco
 
-   # Or interactive terminal workbench (+ optional live webcam HUD):
-   python -m src.testar_peteleco --preview --tts
+   # Or hands-free CLI workbench (say "PETeleco" to open a 60 s Active Listening window):
+   python -m src.testar_peteleco --preview --continuo --tts
 
    # Isolated 36-case Layer 2 benchmark:
    python src/benchmark_router.py --suite todas --rodadas 2
    ```
-   - **First run:** `YuNet`, `SFace` (`models/`), and `pt_BR-faber-medium` Piper voice files (`models/piper/`) download automatically if missing.
-   - **Whisper & mic calibration:** `--whisper-modelo auto` picks `small` on CUDA and `base` on CPU. In noisy rooms or sensitive mics, pass `--mic <index>` (list with `/mics`) and `--limiar-mic 0.025`.
+   - **First run:** `YuNet`, `SFace` (`models/`), and `pt_BR-faber-medium` Piper voice files (`models/piper/`) download automatically as offline backups.
+   - **STT, TTS & Router options:** `--roteador auto` uses Jev on CUDA GPUs and `Gemini Flash-Lite` on CPU-only laptops (`--roteador jev` forces local Ollama). `--stt-modo auto` tries `Gemini Audio` first on CPU (falling back to `faster-whisper small`); `--tts-modo auto` uses `Edge Neural` (`pt-BR-AntonioNeural`, switchable in the UI or via `--tts-voz`) with `Gemini TTS` and offline `Piper TTS` fallbacks.
+   - **Wake-word & Mic tuning:** In continuous mode (`--continuo` or UI toggle), ambient speech is ignored in *Standby* until you say **`"PETeleco"`**, which opens a rolling 60 s *Active Listening* window (disable via `--sem-wake-word` or the UI `Wake "PETeleco"` button). Adjust mic sensitivity with `--mic <index>` (list via `/mics`) and `--limiar-mic 0.012`.
    - **Useful workbench commands:** empty `[ENTER]` for a single mic turn, `/continuo` to toggle hands-free continuous listening, `/preview` to toggle the live HUD window, `/rosto <name>` and `/voz <name>` to enroll your face/voice, `/corpo <chao|bancada|no_colo>` to test table-edge safety locks, `/foto <file> [prompt]` to test image input, and `/perfil` to inspect 3-tier memory.

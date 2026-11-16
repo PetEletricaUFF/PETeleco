@@ -87,23 +87,33 @@ class WebcamLive:
         camera_idx: int = 0,
         detector_faces: Optional[Callable[[Any], List[Dict[str, Any]]]] = None,
         preview: bool = False,
-        intervalo_face_s: float = 0.40,
+        deteccao_continua: bool = False,
+        intervalo_face_s: float = 0.35,
     ) -> None:
         self.camera_idx = int(camera_idx)
         self._detector_faces = detector_faces
         self._intervalo_face_s = max(0.15, float(intervalo_face_s))
 
         self._lock = threading.Lock()
+        self._frame_cond = threading.Condition()
         self._face_lock = threading.Lock()
         self._stop_event = threading.Event()
         self._ready_event = threading.Event()
 
         self._disponivel = False
         self._frame_atual: Any = None
+        self._frame_seq: int = 0
+        self._fps_atual: float = 0.0
+        self._face_ms: float = 0.0
+        self._resolucao: tuple[int, int] = (0, 0)
         self._faces_atuais: List[Dict[str, Any]] = []
         self._preview_ativo = bool(preview)
+        self._deteccao_continua = bool(deteccao_continua)
         self._janela_aberta = False
         self._fechado_pelo_usuario = False
+        self._mjpeg_cache_seq: int = -1
+        self._mjpeg_cache_bytes: Optional[bytes] = None
+        self._erro_camera: str = ""
 
         self._hud: Dict[str, str] = {
             "status": "PRONTO",
@@ -130,6 +140,11 @@ class WebcamLive:
         with self._lock:
             return self._preview_ativo
 
+    @property
+    def deteccao_continua_ativa(self) -> bool:
+        with self._lock:
+            return self._deteccao_continua
+
     def iniciar(self, timeout_s: float = 4.0) -> bool:
         """Abre a webcam e inicia captura continua em background."""
         if self._thread is not None and self._thread.is_alive():
@@ -137,6 +152,7 @@ class WebcamLive:
         self._stop_event.clear()
         self._ready_event.clear()
         self._fechado_pelo_usuario = False
+        self._erro_camera = ""
         self._thread = threading.Thread(target=self._loop_captura, name="peteleco-webcam", daemon=True)
         self._thread.start()
         self._ready_event.wait(timeout=timeout_s)
@@ -147,6 +163,13 @@ class WebcamLive:
             self._preview_ativo = bool(ativo)
             if ativo:
                 self._fechado_pelo_usuario = False
+
+    def ativar_deteccao_continua(self, ativo: bool) -> None:
+        with self._lock:
+            self._deteccao_continua = bool(ativo)
+            if not ativo and not self._preview_ativo:
+                self._faces_atuais = []
+                self._face_ms = 0.0
 
     def atualizar_hud(self, **campos: str) -> None:
         with self._lock:
@@ -169,14 +192,88 @@ class WebcamLive:
         frame = self.capturar_frame()
         if frame is None or self._detector_faces is None:
             return []
+        t0 = time.perf_counter()
         with self._face_lock:
             faces = self._detector_faces(frame)
+        face_ms = (time.perf_counter() - t0) * 1000.0
         with self._lock:
             self._faces_atuais = list(faces)
+            self._face_ms = face_ms
         return faces
+
+    def aguardar_novo_frame(self, ultimo_seq: int, timeout_s: float = 0.5) -> int:
+        """Bloqueia ate chegar um novo frame da webcam ou atingir timeout."""
+        with self._frame_cond:
+            self._frame_cond.wait_for(
+                lambda: self._stop_event.is_set() or self._frame_seq != ultimo_seq,
+                timeout=timeout_s,
+            )
+            return self._frame_seq
+
+    def obter_telemetria(self) -> Dict[str, Any]:
+        """Retorna snapshot estruturado da webcam e deteccoes YuNet+SFace."""
+        with self._lock:
+            faces_serial = []
+            for f in self._faces_atuais:
+                faces_serial.append(
+                    {
+                        "bbox": [int(v) for v in f.get("bbox", (0, 0, 0, 0))],
+                        "landmarks": [[int(p[0]), int(p[1])] for p in f.get("landmarks", [])],
+                        "det_score": float(f.get("det_score", 1.0)),
+                        "nome": str(f.get("nome", "desconhecido")),
+                        "candidato": str(f.get("candidato", "")),
+                        "score": float(f.get("score", 0.0)),
+                        "limiar": float(f.get("limiar", 0.363)),
+                        "label": str(f.get("label", "desconhecido")),
+                    }
+                )
+            return {
+                "disponivel": self._disponivel,
+                "erro": self._erro_camera,
+                "resolucao": [int(self._resolucao[0]), int(self._resolucao[1])],
+                "fps": round(self._fps_atual, 1),
+                "face_ms": round(self._face_ms, 1),
+                "frame_seq": self._frame_seq,
+                "deteccao_continua": self._deteccao_continua,
+                "faces": faces_serial,
+            }
+
+    def obter_frame_mjpeg_bytes(self, qualidade: int = 80, anotar_faces: bool = True) -> Optional[bytes]:
+        """Codifica frame mais recente em JPEG com anotacoes YuNet+SFace (cache por frame_seq)."""
+        try:
+            import cv2  # type: ignore
+        except Exception:
+            return None
+
+        with self._lock:
+            if self._frame_atual is None:
+                return None
+            seq = self._frame_seq
+            if anotar_faces and self._mjpeg_cache_seq == seq and self._mjpeg_cache_bytes is not None:
+                return self._mjpeg_cache_bytes
+            frm = self._frame_atual.copy()
+            faces = list(self._faces_atuais)
+            face_ms = self._face_ms
+            fps = self._fps_atual
+
+        if anotar_faces:
+            frm = self._desenhar_caixas_faciais(frm, faces, face_ms=face_ms, fps=fps)
+
+        ok, buf = cv2.imencode(".jpg", frm, [int(cv2.IMWRITE_JPEG_QUALITY), int(qualidade)])
+        if not ok:
+            return None
+        jpg = buf.tobytes()
+        if anotar_faces:
+            with self._lock:
+                if self._frame_seq == seq:
+                    self._mjpeg_cache_seq = seq
+                    self._mjpeg_cache_bytes = jpg
+        return jpg
 
     def fechar(self) -> None:
         self._stop_event.set()
+        with self._frame_cond:
+            self._frame_cond.notify_all()
         if self._thread is not None and self._thread.is_alive():
             self._thread.join(timeout=2.5)
         self._disponivel = False
@@ -193,21 +290,58 @@ class WebcamLive:
             cap = cv2.VideoCapture(self.camera_idx)
         return cap
 
-    def _desenhar_hud(self, frame: Any, faces: List[Dict[str, Any]], hud: Dict[str, str]) -> Any:
+    @staticmethod
+    def _desenhar_caixas_faciais(
+        vis: Any,
+        faces: List[Dict[str, Any]],
+        face_ms: float = 0.0,
+        fps: float = 0.0,
+    ) -> Any:
         import cv2  # type: ignore
 
-        vis = frame.copy()
         h, w = vis.shape[:2]
-
         for f in faces:
             x, y, bw, bh = f.get("bbox", (0, 0, 0, 0))
             nome = str(f.get("nome", "desconhecido"))
-            label = _texto_hud(str(f.get("label", nome)))
-            cor = (80, 230, 120) if nome != "desconhecido" else (40, 190, 255)
+            score = float(f.get("score", 0.0))
+            cand = str(f.get("candidato", ""))
+            reconhecido = nome != "desconhecido"
+            cor = (80, 230, 120) if reconhecido else (40, 190, 255)
+
             cv2.rectangle(vis, (x, y), (x + bw, y + bh), cor, 2)
+            canto = max(8, min(18, bw // 5, bh // 5))
+            for cx, dx in ((x, canto), (x + bw, -canto)):
+                for cy, dy in ((y, canto), (y + bh, -canto)):
+                    cv2.line(vis, (cx, cy), (cx + dx, cy), cor, 3)
+                    cv2.line(vis, (cx, cy), (cx, cy + dy), cor, 3)
+
+            for lx, ly in f.get("landmarks", []):
+                if 0 <= lx < w and 0 <= ly < h:
+                    cv2.circle(vis, (lx, ly), 2, (255, 225, 110), -1, cv2.LINE_AA)
+
+            if reconhecido:
+                label = _texto_hud(str(f.get("label", nome)))
+            elif cand and score > 0.0:
+                label = _texto_hud(f"desconhecido | ~{cand} {score:.2f}")
+            else:
+                label = "desconhecido"
+
             y_txt = max(24, y - 8)
-            cv2.rectangle(vis, (x, y_txt - 18), (min(w, x + max(130, len(label) * 9 + 12)), y_txt + 4), cor, -1)
-            cv2.putText(vis, label, (x + 5, y_txt - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (15, 15, 15), 2)
+            largura_tag = min(w - x, max(120, len(label) * 9 + 14))
+            cv2.rectangle(vis, (x, y_txt - 18), (x + largura_tag, y_txt + 4), cor, -1)
+            cv2.putText(vis, label, (x + 5, y_txt - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (15, 15, 15), 2)
+
+        if fps > 0.0 or face_ms > 0.0:
+            tag_perf = _texto_hud(f"CAM {w}x{h} | {fps:.1f} FPS | SFace {face_ms:.1f} ms")
+            cv2.rectangle(vis, (8, 8), (8 + len(tag_perf) * 7 + 14, 30), (16, 20, 28), -1)
+            cv2.putText(vis, tag_perf, (14, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (165, 225, 255), 1, cv2.LINE_AA)
+        return vis
+
+    def _desenhar_hud(self, frame: Any, faces: List[Dict[str, Any]], hud: Dict[str, str]) -> Any:
+        import cv2  # type: ignore
+
+        vis = self._desenhar_caixas_faciais(frame.copy(), faces)
+        h, w = vis.shape[:2]
 
         # Barra superior de telemetria
         overlay = vis.copy()
@@ -250,7 +384,8 @@ class WebcamLive:
     def _loop_captura(self) -> None:
         try:
             import cv2  # type: ignore
-        except Exception:
+        except Exception as exc:
+            self._erro_camera = f"OpenCV indisponivel: {exc}"
             self._disponivel = False
             self._ready_event.set()
             return
@@ -259,6 +394,7 @@ class WebcamLive:
         try:
             cap = self._abrir_capture()
             if cap is None or not cap.isOpened():
+                self._erro_camera = f"Nao foi possivel abrir webcam (indice {self.camera_idx})."
                 self._disponivel = False
                 self._ready_event.set()
                 return
@@ -268,42 +404,65 @@ class WebcamLive:
             for _ in range(5):
                 ok, frm = cap.read()
                 if ok and frm is not None:
+                    h, w = frm.shape[:2]
                     with self._lock:
                         self._frame_atual = frm
+                        self._resolucao = (w, h)
+                        self._frame_seq += 1
                     primeiro_ok = True
                 time.sleep(0.03)
 
+            if not primeiro_ok:
+                self._erro_camera = "Webcam abriu, mas nao retornou frames."
             self._disponivel = primeiro_ok
             self._ready_event.set()
             if not primeiro_ok:
                 return
 
             t_ultimo_face = 0.0
+            t_ultimo_frame = time.monotonic()
             while not self._stop_event.is_set():
                 ok, frm = cap.read()
+                agora = time.monotonic()
                 if ok and frm is not None:
+                    dt = max(1e-3, agora - t_ultimo_frame)
+                    t_ultimo_frame = agora
+                    fps_inst = 1.0 / dt
+                    h, w = frm.shape[:2]
                     with self._lock:
                         self._frame_atual = frm
+                        self._resolucao = (w, h)
+                        self._frame_seq += 1
+                        self._fps_atual = fps_inst if self._fps_atual <= 0 else (0.8 * self._fps_atual + 0.2 * fps_inst)
                 else:
                     time.sleep(0.03)
                     continue
 
                 with self._lock:
                     quer_preview = self._preview_ativo
+                    quer_deteccao = self._deteccao_continua
                     hud_snap = dict(self._hud)
 
-                if quer_preview:
-                    agora = time.monotonic()
-                    if self._detector_faces is not None and (agora - t_ultimo_face) >= self._intervalo_face_s:
+                if (quer_preview or quer_deteccao) and self._detector_faces is not None:
+                    if (agora - t_ultimo_face) >= self._intervalo_face_s:
                         t_ultimo_face = agora
+                        t0_f = time.perf_counter()
                         with self._face_lock:
                             faces = self._detector_faces(frm)
+                        face_ms = (time.perf_counter() - t0_f) * 1000.0
                         with self._lock:
                             self._faces_atuais = list(faces)
+                            self._face_ms = face_ms
                     else:
                         with self._lock:
                             faces = list(self._faces_atuais)
+                else:
+                    faces = []
 
+                with self._frame_cond:
+                    self._frame_cond.notify_all()
+
+                if quer_preview:
                     vis = self._desenhar_hud(frm, faces, hud_snap)
                     if not self._janela_aberta:
                         cv2.namedWindow(self.JANELA_TITULO, cv2.WINDOW_NORMAL)
@@ -319,11 +478,14 @@ class WebcamLive:
                         cv2.destroyWindow(self.JANELA_TITULO)
                         cv2.waitKey(1)
                         self._janela_aberta = False
-                    time.sleep(0.04)
-        except Exception:
+                    time.sleep(0.025)
+        except Exception as exc:
+            self._erro_camera = f"Falha na thread da webcam: {exc}"
             self._disponivel = False
             self._ready_event.set()
         finally:
+            with self._frame_cond:
+                self._frame_cond.notify_all()
             if self._janela_aberta:
                 try:
                     import cv2  # type: ignore

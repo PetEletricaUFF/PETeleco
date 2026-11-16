@@ -1,0 +1,1549 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>PETeleco — Câmera, Reconhecimento Facial &amp; Cérebro Ao Vivo</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+
+      --bg-light: #f3f6f9;
+      --surface-light: #ffffff;
+      --surface-alt-light: #e9eff5;
+      --border-light: #cdd7e3;
+      --text-light: #102030;
+      --muted-light: #4d6278;
+      --accent-light: #047857;
+      --accent-text-light: #ffffff;
+      --info-light: #0369a1;
+      --info-text-light: #ffffff;
+      --warn-light: #b45309;
+      --danger-light: #b91c1c;
+
+      --bg-dark: #0b1117;
+      --surface-dark: #111923;
+      --surface-alt-dark: #182330;
+      --border-dark: #28384a;
+      --text-dark: #e6eef7;
+      --muted-dark: #93a7bd;
+      --accent-dark: #34d399;
+      --accent-text-dark: #062116;
+      --info-dark: #38bdf8;
+      --info-text-dark: #041926;
+      --warn-dark: #fbbf24;
+      --danger-dark: #f87171;
+
+      --bg: var(--bg-light);
+      --surface: var(--surface-light);
+      --surface-alt: var(--surface-alt-light);
+      --border: var(--border-light);
+      --text: var(--text-light);
+      --muted: var(--muted-light);
+      --accent: var(--accent-light);
+      --accent-text: var(--accent-text-light);
+      --info: var(--info-light);
+      --info-text: var(--info-text-light);
+      --warn: var(--warn-light);
+      --danger: var(--danger-light);
+      --track: #d6e0eb;
+      --scroll-thumb: #6f8296;
+      --scroll-track: #e2e8f0;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: var(--bg-dark);
+        --surface: var(--surface-dark);
+        --surface-alt: var(--surface-alt-dark);
+        --border: var(--border-dark);
+        --text: var(--text-dark);
+        --muted: var(--muted-dark);
+        --accent: var(--accent-dark);
+        --accent-text: var(--accent-text-dark);
+        --info: var(--info-dark);
+        --info-text: var(--info-text-dark);
+        --warn: var(--warn-dark);
+        --danger: var(--danger-dark);
+        --track: #1f2d3d;
+        --scroll-thumb: #556a80;
+        --scroll-track: #141e29;
+      }
+    }
+
+    @supports (color: light-dark(white, black)) {
+      :root {
+        --bg: light-dark(var(--bg-light), var(--bg-dark));
+        --surface: light-dark(var(--surface-light), var(--surface-dark));
+        --surface-alt: light-dark(var(--surface-alt-light), var(--surface-alt-dark));
+        --border: light-dark(var(--border-light), var(--border-dark));
+        --text: light-dark(var(--text-light), var(--text-dark));
+        --muted: light-dark(var(--muted-light), var(--muted-dark));
+        --accent: light-dark(var(--accent-light), var(--accent-dark));
+        --accent-text: light-dark(var(--accent-text-light), var(--accent-text-dark));
+        --info: light-dark(var(--info-light), var(--info-dark));
+        --info-text: light-dark(var(--info-text-light), var(--info-text-dark));
+        --warn: light-dark(var(--warn-light), var(--warn-dark));
+        --danger: light-dark(var(--danger-light), var(--danger-dark));
+        --track: light-dark(#d6e0eb, #1f2d3d);
+        --scroll-thumb: light-dark(#6f8296, #556a80);
+        --scroll-track: light-dark(#e2e8f0, #141e29);
+      }
+    }
+
+    :root {
+      accent-color: var(--accent);
+      scrollbar-color: var(--scroll-thumb) var(--scroll-track);
+    }
+
+    [hidden] {
+      display: none !important;
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, sans-serif;
+      line-height: 1.45;
+      min-block-size: 100dvb;
+    }
+
+    .app-shell {
+      max-inline-size: 1480px;
+      margin-inline: auto;
+      padding-inline: 1rem;
+      padding-block: 0.85rem 1.25rem;
+      display: grid;
+      gap: 0.85rem;
+    }
+
+    .topbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      padding: 0.75rem 1rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      min-inline-size: 0;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 1.12rem;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+    }
+
+    .brand .subtitle {
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+
+    .status-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+      align-items: center;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.25rem 0.6rem;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--surface-alt);
+      font-size: 0.76rem;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .pill[data-tone="ok"] { border-color: var(--accent); color: var(--accent); }
+    .pill[data-tone="info"] { border-color: var(--info); color: var(--info); }
+    .pill[data-tone="warn"] { border-color: var(--warn); color: var(--warn); }
+    .pill[data-tone="danger"] { border-color: var(--danger); color: var(--danger); }
+
+    .pipeline-bar {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 0.45rem;
+      padding: 0.65rem 0.75rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+    }
+
+    .stage-step {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      padding: 0.4rem 0.6rem;
+      border-radius: 0.5rem;
+      border: 1px solid var(--border);
+      background: var(--surface-alt);
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--muted);
+      min-inline-size: 0;
+    }
+
+    .stage-step[data-state="active"] {
+      border-color: var(--info);
+      color: var(--text);
+      outline: 2px solid var(--info);
+      outline-offset: -1px;
+    }
+
+    .stage-step[data-state="done"] {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .stage-dot {
+      inline-size: 0.55rem;
+      block-size: 0.55rem;
+      border-radius: 999px;
+      background: currentColor;
+      flex: 0 0 auto;
+    }
+
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+      gap: 0.9rem;
+      align-items: start;
+    }
+
+    @media (max-width: 980px) {
+      .dashboard-grid {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
+    .column-stack {
+      display: grid;
+      gap: 0.85rem;
+      min-inline-size: 0;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+      padding: 0.85rem;
+      display: grid;
+      gap: 0.65rem;
+      min-inline-size: 0;
+    }
+
+    .card-header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+
+    .card-title {
+      margin: 0;
+      font-size: 0.92rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+
+    .mono {
+      font-family: ui-monospace, "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
+      font-size: 0.78rem;
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+
+    /* Camera viewport */
+    .camera-box {
+      position: relative;
+      aspect-ratio: 4 / 3;
+      inline-size: 100%;
+      background: #070b10;
+      border: 1px solid var(--border);
+      border-radius: 0.6rem;
+      overflow: clip;
+      display: grid;
+      place-items: center;
+    }
+
+    #camera-stream {
+      display: block;
+      inline-size: 100%;
+      block-size: 100%;
+      object-fit: cover;
+    }
+
+    .camera-fallback {
+      padding: 1rem;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
+
+    /* Live detected faces */
+    .faces-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 0.5rem;
+    }
+
+    .face-chip {
+      padding: 0.55rem 0.65rem;
+      border-radius: 0.5rem;
+      border: 1px solid var(--border);
+      background: var(--surface-alt);
+      display: grid;
+      gap: 0.35rem;
+    }
+
+    .face-chip[data-match="known"] { border-color: var(--accent); }
+    .face-chip[data-match="unknown"] { border-color: var(--warn); }
+
+    .face-chip-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.82rem;
+      font-weight: 700;
+    }
+
+    /* Toolbar */
+    [role="toolbar"] {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: safe center;
+      gap: 0.45rem;
+      padding: 0.45rem;
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
+      border-radius: 0.6rem;
+    }
+
+    [role="group"] {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      align-items: center;
+    }
+
+    [role="separator"][aria-orientation="vertical"] {
+      inline-size: 1px;
+      block-size: 1.5rem;
+      border-inline-start: 1px solid var(--border);
+      margin-inline: 0.15rem;
+    }
+
+    button {
+      font: inherit;
+      font-size: 0.8rem;
+      font-weight: 600;
+      min-inline-size: 24px;
+      min-block-size: 32px;
+      padding: 0.35rem 0.68rem;
+      border-radius: 0.45rem;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    button:focus-visible, input:focus-visible, select:focus-visible {
+      outline: 2px solid var(--info);
+      outline-offset: 2px;
+    }
+
+    button[aria-pressed="true"] {
+      background: var(--accent);
+      color: var(--accent-text);
+      border-color: var(--accent);
+      box-shadow: inset 0 0 0 1px currentColor;
+    }
+
+    button.btn-primary {
+      background: var(--info);
+      color: var(--info-text);
+      border-color: var(--info);
+    }
+
+    button[aria-disabled="true"] {
+      opacity: 0.55;
+      cursor: progress;
+    }
+
+    @media (hover: hover) {
+      button:not([aria-disabled="true"]):hover {
+        filter: brightness(1.08);
+      }
+    }
+
+    @media (prefers-reduced-motion: no-preference) {
+      button, .stage-step {
+        transition: background-color 140ms ease, border-color 140ms ease, filter 140ms ease;
+      }
+    }
+
+    @media (pointer: coarse) {
+      button {
+        min-block-size: 40px;
+      }
+    }
+
+    @media (forced-colors: active) {
+      button[aria-pressed="true"] {
+        background: Highlight;
+        color: HighlightText;
+        border-color: ButtonText;
+      }
+    }
+
+    .live-status {
+      margin: 0;
+      font-size: 0.78rem;
+      color: var(--muted);
+      min-block-size: 1.2em;
+    }
+
+    .sr-only {
+      position: absolute;
+      inline-size: 1px;
+      block-size: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    .engine-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
+      gap: 0.45rem;
+      padding: 0.5rem 0.6rem;
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
+      border-radius: 0.6rem;
+    }
+
+    .engine-field {
+      display: grid;
+      gap: 0.2rem;
+      min-inline-size: 0;
+    }
+
+    .engine-field label {
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+    }
+
+    .engine-field select {
+      inline-size: 100%;
+      min-inline-size: 0;
+      min-block-size: 32px;
+      padding: 0.25rem 0.45rem;
+      border-radius: 0.4rem;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font: inherit;
+      font-size: 0.78rem;
+    }
+
+    /* Forms */
+    .form-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+      align-items: center;
+    }
+
+    .form-row input[type="text"],
+    .form-row select {
+      flex: 1 1 200px;
+      min-inline-size: 0;
+      min-block-size: 34px;
+      padding: 0.35rem 0.6rem;
+      border-radius: 0.45rem;
+      border: 1px solid var(--border);
+      background: var(--surface-alt);
+      color: var(--text);
+      font: inherit;
+      font-size: 0.84rem;
+    }
+
+    .chip-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+    }
+
+    .chip-btn {
+      font-size: 0.74rem;
+      min-block-size: 26px;
+      padding: 0.2rem 0.5rem;
+      background: var(--surface-alt);
+    }
+
+    /* Progress bars */
+    progress {
+      appearance: none;
+      border: 0 solid;
+      overflow: clip;
+      inline-size: 100%;
+      block-size: 0.55rem;
+      border-radius: 1e5px;
+      background: var(--track);
+      --progress-fill: var(--info);
+    }
+
+    progress.tone-accent { --progress-fill: var(--accent); }
+    progress.tone-warn { --progress-fill: var(--warn); }
+    progress.tone-danger { --progress-fill: var(--danger); }
+
+    progress::-webkit-progress-bar {
+      background: transparent;
+    }
+
+    progress::-webkit-progress-value {
+      background: var(--progress-fill);
+      border-radius: 1e5px;
+      transition: inline-size 0.25s;
+    }
+
+    progress::-moz-progress-bar {
+      background: var(--progress-fill);
+      border-radius: 1e5px;
+      transition: inline-size 0.25s;
+    }
+
+    .prob-list {
+      display: grid;
+      gap: 0.38rem;
+    }
+
+    .prob-row {
+      display: grid;
+      grid-template-columns: minmax(115px, 145px) 1fr auto;
+      gap: 0.5rem;
+      align-items: center;
+      font-size: 0.78rem;
+    }
+
+    .prob-row[data-winner="true"] {
+      font-weight: 700;
+      color: var(--accent);
+    }
+
+    .kv-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+      gap: 0.45rem;
+    }
+
+    .kv-box {
+      padding: 0.45rem 0.55rem;
+      border: 1px solid var(--border);
+      border-radius: 0.45rem;
+      background: var(--surface-alt);
+      min-inline-size: 0;
+    }
+
+    .kv-label {
+      font-size: 0.7rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .kv-val {
+      font-size: 0.85rem;
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+
+    /* Scrollers */
+    .scroller {
+      overflow-y: auto;
+      scrollbar-gutter: stable;
+      overscroll-behavior: contain;
+      scrollbar-color: var(--scroll-thumb) var(--scroll-track);
+      scrollbar-width: thin;
+      border: 1px solid var(--border);
+      border-radius: 0.5rem;
+      background: var(--surface-alt);
+      padding: 0.55rem;
+    }
+
+    @supports not (scrollbar-color: auto) {
+      .scroller::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+      }
+      .scroller::-webkit-scrollbar-thumb {
+        background: var(--scroll-thumb);
+      }
+      .scroller::-webkit-scrollbar-track {
+        background: var(--scroll-track);
+      }
+    }
+
+    #chat-log {
+      max-block-size: 230px;
+      display: grid;
+      gap: 0.55rem;
+    }
+
+    .chat-turn {
+      display: grid;
+      gap: 0.25rem;
+      padding-block-end: 0.45rem;
+      border-block-end: 1px dashed var(--border);
+    }
+
+    .chat-turn:last-child {
+      border-block-end: 0;
+      padding-block-end: 0;
+    }
+
+    .chat-user { font-size: 0.83rem; color: var(--info); }
+    .chat-bot { font-size: 0.86rem; }
+
+    #trace-log {
+      max-block-size: 215px;
+      display: grid;
+      gap: 0.25rem;
+    }
+
+    .log-line {
+      font-size: 0.76rem;
+      display: flex;
+      gap: 0.45rem;
+      align-items: baseline;
+      overflow-wrap: anywhere;
+    }
+
+    .log-tag {
+      font-weight: 700;
+      min-inline-size: 74px;
+      flex: 0 0 auto;
+    }
+
+    .log-line[data-level="OK"] .log-tag,
+    .log-line[data-level="JEV"] .log-tag { color: var(--accent); }
+    .log-line[data-level="AVISO"] .log-tag { color: var(--warn); }
+    .log-line[data-level="ERRO"] .log-tag { color: var(--danger); }
+    .log-line[data-level="INFO"] .log-tag { color: var(--info); }
+
+    details summary {
+      cursor: pointer;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--muted);
+    }
+
+    pre.raw-json {
+      margin: 0.45rem 0 0;
+      max-block-size: 190px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .badge-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+    }
+
+    .mini-tag {
+      font-size: 0.73rem;
+      padding: 0.15rem 0.45rem;
+      border-radius: 0.35rem;
+      border: 1px solid var(--border);
+      background: var(--surface);
+    }
+  </style>
+</head>
+<body>
+  <main class="app-shell">
+    <!-- Topbar -->
+    <header class="topbar">
+      <div class="brand">
+        <div>
+          <h1>PETeleco — Painel Ao Vivo &amp; Debaixo dos Panos</h1>
+          <div class="subtitle">Webcam YuNet+SFace + Voz + STT (Gemini / Whisper small) + Wake &quot;PETeleco&quot; + Roteador (Gemini / Jev) + Persona v3.2 + TTS Neural</div>
+        </div>
+      </div>
+      <div class="status-pills" id="service-pills">
+        <span class="pill" id="pill-cam">CAM: ...</span>
+        <span class="pill" id="pill-escuta">Escuta: ...</span>
+        <span class="pill" id="pill-rota">Rota: ...</span>
+        <span class="pill" id="pill-jev">Jev: ...</span>
+        <button type="button" id="btn-start-ollama" hidden>Ligar Ollama</button>
+        <span class="pill" id="pill-gemini">Gemini: ...</span>
+        <span class="pill" id="pill-stt">STT: ...</span>
+        <span class="pill" id="pill-tts">TTS: ...</span>
+        <span class="pill" id="pill-sse">SSE: conectando</span>
+      </div>
+    </header>
+
+    <!-- Pipeline live stepper -->
+    <section aria-label="Estágios da pipeline em tempo real" class="pipeline-bar" id="pipeline-bar">
+      <div class="stage-step" data-stage="vad"><span class="stage-dot"></span><span>1. VAD / Mic</span></div>
+      <div class="stage-step" data-stage="stt"><span class="stage-dot"></span><span>2. STT + Voz</span></div>
+      <div class="stage-step" data-stage="visao"><span class="stage-dot"></span><span>3. YuNet + SFace</span></div>
+      <div class="stage-step" data-stage="jev"><span class="stage-dot"></span><span>4. Roteador / Wake</span></div>
+      <div class="stage-step" data-stage="persona"><span class="stage-dot"></span><span>5. Trava / Persona</span></div>
+      <div class="stage-step" data-stage="tts"><span class="stage-dot"></span><span>6. Voz TTS</span></div>
+    </section>
+
+    <div class="dashboard-grid">
+      <!-- LEFT: Camera, Face Recognition & Interaction -->
+      <section class="column-stack" id="camera-panel">
+        <article class="card">
+          <div class="card-header">
+            <h2 class="card-title">Olhos do Robô &amp; Biometria Facial (YuNet + SFace)</h2>
+            <span class="mono muted" id="cam-metrics">-- FPS | SFace -- ms</span>
+          </div>
+
+          <div class="camera-box">
+            <img id="camera-stream" src="/video.mjpg" alt="Fluxo ao vivo da webcam com caixas faciais YuNet e SFace">
+            <div class="camera-fallback" id="camera-fallback" hidden>
+              Webcam indisponível ou desligada. Verifique permissões/cabo ou inicie sem <code>--sem-webcam</code>.
+            </div>
+          </div>
+
+          <!-- Detected faces cards -->
+          <div class="faces-grid" id="faces-grid">
+            <div class="face-chip">
+              <div class="face-chip-head"><span>Nenhum rosto no enquadramento</span><span class="mono">0.00</span></div>
+              <progress max="1" value="0"></progress>
+              <span class="muted">Limiar SFace de reconhecimento: 0.363</span>
+            </div>
+          </div>
+
+          <!-- Semantic toolbar -->
+          <div role="toolbar" focusgroup="toolbar wrap" aria-label="Controles principais do PETeleco" aria-controls="camera-panel" id="main-toolbar">
+            <div role="group" aria-label="Captura de voz e escuta">
+              <button type="button" class="btn-primary" id="btn-mic">Falar 1x (Mic)</button>
+              <button type="button" id="btn-continuo" aria-pressed="false">Escuta Contínua</button>
+              <button type="button" id="btn-escuta-ativa" aria-pressed="false">Ligar Escuta (60s)</button>
+              <button type="button" id="btn-wake-req" aria-pressed="true">Wake &quot;PETeleco&quot;</button>
+              <button type="button" id="btn-ver-agora">Descrever Câmera</button>
+            </div>
+            <span role="separator" aria-orientation="vertical"></span>
+            <div role="group" aria-label="Áudio e visão">
+              <button type="button" id="btn-tts" aria-pressed="true">Voz TTS</button>
+              <button type="button" id="btn-face-detect" aria-pressed="true">Detecção Facial</button>
+            </div>
+            <span role="separator" aria-orientation="vertical"></span>
+            <div role="group" aria-label="Superfície física simulada">
+              <button type="button" data-surface="chao" aria-pressed="true">Chão</button>
+              <button type="button" data-surface="bancada" aria-pressed="false">Bancada</button>
+              <button type="button" data-surface="no_colo" aria-pressed="false">No colo</button>
+            </div>
+            <span role="separator" aria-orientation="vertical"></span>
+            <div role="group" aria-label="Modo da persona">
+              <button type="button" data-modo="NORMAL" aria-pressed="true">Normal</button>
+              <button type="button" data-modo="DESGRACADO" aria-pressed="false">Desgraçado</button>
+              <button type="button" data-modo="SERIO" aria-pressed="false">Sério</button>
+            </div>
+          </div>
+
+          <section class="engine-grid" aria-label="Motores de roteamento, ouvido e voz">
+            <div class="engine-field">
+              <label for="sel-roteador">Roteador (Cérebro L2)</label>
+              <select id="sel-roteador">
+                <option value="auto">Auto (Gemini CPU / Jev CUDA)</option>
+                <option value="gemini">Gemini Flash-Lite (~0.5s)</option>
+                <option value="jev">Jev Local (/v1/systemone)</option>
+              </select>
+            </div>
+            <div class="engine-field">
+              <label for="sel-stt">Ouvido (STT)</label>
+              <select id="sel-stt">
+                <option value="auto">Auto (Gemini Áudio / Whisper)</option>
+                <option value="gemini">Gemini Áudio (PT-BR preciso)</option>
+                <option value="whisper">Whisper Local (Offline)</option>
+              </select>
+            </div>
+            <div class="engine-field">
+              <label for="sel-whisper">Whisper Local</label>
+              <select id="sel-whisper">
+                <option value="small">small (preciso CPU)</option>
+                <option value="medium">medium (GPU / lento CPU)</option>
+                <option value="base">base (leve, menos preciso)</option>
+              </select>
+            </div>
+            <div class="engine-field">
+              <label for="sel-tts-modo">Motor de Voz (TTS)</label>
+              <select id="sel-tts-modo">
+                <option value="auto">Auto (Edge -&gt; Gemini -&gt; Piper)</option>
+                <option value="edge">Edge Neural (Natural + Rápido)</option>
+                <option value="gemini">Gemini TTS (Mais expressivo)</option>
+                <option value="piper">Piper Offline (Local CPU)</option>
+              </select>
+            </div>
+            <div class="engine-field">
+              <label for="sel-tts-voz">Voz Neural (PT-BR)</label>
+              <select id="sel-tts-voz">
+                <option value="pt-BR-AntonioNeural">Antonio Neural (Masc.)</option>
+                <option value="pt-BR-ThalitaMultilingualNeural">Thalita Neural (Jovem)</option>
+                <option value="pt-BR-FranciscaNeural">Francisca Neural (Fem.)</option>
+              </select>
+            </div>
+          </section>
+
+          <p role="status" class="live-status" id="live-status">Aguardando entrada.</p>
+
+          <!-- Chat / prompt bar -->
+          <form class="form-row" id="chat-form">
+            <label class="sr-only" for="chat-input">Mensagem para o PETeleco</label>
+            <input type="text" id="chat-input" placeholder="Digite uma frase pro PETeleco (ou use o mic acima)..." autocomplete="off">
+            <button type="submit" class="btn-primary" id="btn-send-text">Enviar Texto</button>
+          </form>
+          <div class="chip-row" aria-label="Frases rápidas de teste">
+            <button type="button" class="chip-btn" data-quick="Oi PETeleco, tudo bem?">Oi PETeleco</button>
+            <button type="button" class="chip-btn" data-quick="PETeleco, que dia é hoje?">Que dia é hoje?</button>
+            <button type="button" class="chip-btn" data-quick="Vamos para a frente, pai.">Vamos pra frente</button>
+            <button type="button" class="chip-btn" data-quick="Conta uma piada boa aí!">Conta uma piada</button>
+            <button type="button" class="chip-btn" data-quick="PETeleco, olha pela câmera e me descreve o que você tá vendo!" data-vision="1">O que você tá vendo?</button>
+            <button type="button" class="chip-btn" data-quick="PETeleco, vem cá e segue meu rosto!">Segue meu rosto (trava)</button>
+          </div>
+
+          <!-- Biometrics enrollment -->
+          <div class="form-row">
+            <label class="sr-only" for="enroll-name">Nome ou ID da pessoa para biometria</label>
+            <input type="text" id="enroll-name" list="membros-datalist" value="caio" placeholder="Nome/ID (ex.: caio, to2, livia)">
+            <datalist id="membros-datalist"></datalist>
+            <button type="button" id="btn-enroll-face">Cadastrar Rosto da Webcam</button>
+            <button type="button" id="btn-enroll-voice">Gravar Voz (4s)</button>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <h2 class="card-title">Diálogo em Tempo Real</h2>
+            <span class="muted" id="turn-timing-pill">--</span>
+          </div>
+          <div class="scroller" id="chat-log">
+            <div class="muted">Nenhuma interação ainda nesta sessão.</div>
+          </div>
+        </article>
+      </section>
+
+      <!-- RIGHT: Under the hood ("Debaixo dos panos") -->
+      <section class="column-stack" aria-label="Telemetria interna debaixo dos panos">
+        <!-- Layer 2: Cognitive Router -->
+        <article class="card">
+          <div class="card-header">
+            <h2 class="card-title">Debaixo dos Panos — Camada 2 (Roteador Cognitivo)</h2>
+            <span class="pill" id="jev-route-pill">rota: --</span>
+          </div>
+
+          <div class="kv-grid">
+            <div class="kv-box">
+              <div class="kv-label">Dirigido ao Robô</div>
+              <div class="kv-val mono" id="jev-dir">--</div>
+              <progress id="prog-dir" max="1" value="0"></progress>
+            </div>
+            <div class="kv-box">
+              <div class="kv-label">Confiança Rota</div>
+              <div class="kv-val mono" id="jev-conf">--</div>
+              <progress id="prog-conf" class="tone-accent" max="1" value="0"></progress>
+            </div>
+            <div class="kv-box">
+              <div class="kv-label">Precisa Câmera / Conf.</div>
+              <div class="kv-val mono" id="jev-flags">--</div>
+            </div>
+            <div class="kv-box">
+              <div class="kv-label">Latências (ms)</div>
+              <div class="kv-val mono" id="latencies-summary">--</div>
+            </div>
+          </div>
+
+          <div>
+            <div class="muted" id="jev-prob-title" style="margin-block-end: 0.35rem;">Distribuição de probabilidades em rota_principal:</div>
+            <div class="prob-list" id="jev-probs">
+              <div class="muted">Aguardando primeira chamada do roteador...</div>
+            </div>
+          </div>
+
+          <details>
+            <summary>Ver JSON bruto completo do roteador</summary>
+            <pre class="scroller raw-json mono" id="jev-raw-json">{}</pre>
+          </details>
+        </article>
+
+        <!-- Identity, Body Safety & 3-tier Memory -->
+        <article class="card">
+          <div class="card-header">
+            <h2 class="card-title">Identidade, Trava Física &amp; Memória (JSON + SQLite)</h2>
+            <span class="pill" id="safety-pill">Superfície: chao</span>
+          </div>
+
+          <div class="kv-grid">
+            <div class="kv-box">
+              <div class="kv-label">Pessoa Ativa</div>
+              <div class="kv-val" id="mem-person">desconhecido</div>
+            </div>
+            <div class="kv-box">
+              <div class="kv-label">Modo de ID</div>
+              <div class="kv-val mono" id="mem-id-mode">--</div>
+            </div>
+            <div class="kv-box">
+              <div class="kv-label">Rostos / Vozes</div>
+              <div class="kv-val mono" id="bio-counts">--</div>
+            </div>
+          </div>
+
+          <div>
+            <div class="kv-label" style="margin-block-end: 0.25rem;">Traços da Ficha Quente (`perfis_pessoas.json`)</div>
+            <div class="badge-list" id="mem-traits"><span class="muted">Sem traços carregados</span></div>
+          </div>
+
+          <div>
+            <div class="kv-label" style="margin-block-end: 0.25rem;">Últimos Episódios (SQLite Frio)</div>
+            <div class="scroller" id="episodes-list" style="max-block-size: 130px;">
+              <div class="muted">Nenhum episódio consultado ainda.</div>
+            </div>
+          </div>
+        </article>
+
+        <!-- Live Execution Trace -->
+        <article class="card">
+          <div class="card-header">
+            <h2 class="card-title">Trace Interno em Tempo Real</h2>
+            <span class="muted" id="trace-count">0 eventos</span>
+          </div>
+          <div class="scroller" id="trace-log"></div>
+        </article>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    (() => {
+      const STAGE_ORDER = ["vad", "stt", "visao", "jev", "persona", "tts"];
+      const el = (id) => document.getElementById(id);
+
+      let latestState = null;
+      let escutaDeadlineMs = 0;
+      let escutaExigeWake = true;
+
+      function updateEscutaVisual() {
+        const pEsc = el("pill-escuta");
+        const btnEsc = el("btn-escuta-ativa");
+        const remMs = escutaDeadlineMs - Date.now();
+        const ativa = remMs > 0;
+        const remS = ativa ? Math.max(1, Math.ceil(remMs / 1000)) : 0;
+        if (pEsc) {
+          pEsc.textContent = ativa
+            ? `Escuta: ATIVA (${remS}s)`
+            : (escutaExigeWake ? 'Escuta: Standby ("PETeleco")' : "Escuta: Livre");
+          pEsc.dataset.tone = ativa ? "ok" : (escutaExigeWake ? "info" : "warn");
+        }
+        if (btnEsc) {
+          btnEsc.setAttribute("aria-pressed", String(ativa));
+          btnEsc.textContent = ativa ? `Escuta Ativa (${remS}s)` : "Ligar Escuta (60s)";
+        }
+      }
+
+      function setButtonDisabled(btn, disabled) {
+        if (!btn) return;
+        btn.setAttribute("aria-disabled", disabled ? "true" : "false");
+      }
+
+      function isDisabled(btn) {
+        return btn && btn.getAttribute("aria-disabled") === "true";
+      }
+
+      function setStatus(msg) {
+        el("live-status").textContent = msg || "Pronto.";
+      }
+
+      async function postJson(url, payload = {}) {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        let data = {};
+        try {
+          data = await res.json();
+        } catch {}
+        if (!res.ok && data.mensagem) {
+          setStatus(data.mensagem);
+        }
+        return data;
+      }
+
+      function renderStage(activeStage, msg) {
+        const effective = activeStage === "gravando" ? "vad" : activeStage;
+        const activeIdx = STAGE_ORDER.indexOf(effective);
+        document.querySelectorAll("#pipeline-bar .stage-step").forEach((node) => {
+          const st = node.dataset.stage;
+          const idx = STAGE_ORDER.indexOf(st);
+          if (effective === "pronto") {
+            node.dataset.state = "idle";
+          } else if (idx === activeIdx) {
+            node.dataset.state = "active";
+          } else if (activeIdx > idx && idx >= 0) {
+            node.dataset.state = "done";
+          } else {
+            node.dataset.state = "idle";
+          }
+        });
+        if (msg) setStatus(msg);
+      }
+
+      function renderVision(cam) {
+        if (!cam) return;
+        const img = el("camera-stream");
+        const fallback = el("camera-fallback");
+        const pillCam = el("pill-cam");
+        if (cam.disponivel) {
+          pillCam.textContent = `CAM: ON (${cam.resolucao[0]}x${cam.resolucao[1]})`;
+          pillCam.dataset.tone = "ok";
+          img.hidden = false;
+          fallback.hidden = true;
+          el("cam-metrics").textContent = `${Number(cam.fps || 0).toFixed(1)} FPS | SFace ${Number(cam.face_ms || 0).toFixed(1)} ms`;
+        } else {
+          pillCam.textContent = "CAM: OFF";
+          pillCam.dataset.tone = "danger";
+          img.hidden = true;
+          fallback.hidden = false;
+          fallback.textContent = cam.erro || "Webcam indisponível.";
+          el("cam-metrics").textContent = "-- FPS";
+        }
+
+        const grid = el("faces-grid");
+        grid.replaceChildren();
+        const faces = Array.isArray(cam.faces) ? cam.faces : [];
+        if (!faces.length) {
+          const card = document.createElement("div");
+          card.className = "face-chip";
+          card.innerHTML = "";
+          const head = document.createElement("div");
+          head.className = "face-chip-head";
+          const s1 = document.createElement("span");
+          s1.textContent = cam.deteccao_continua === false ? "Detecção facial pausada" : "Nenhum rosto detectado";
+          const s2 = document.createElement("span");
+          s2.className = "mono";
+          s2.textContent = "0.000";
+          head.append(s1, s2);
+          const prog = document.createElement("progress");
+          prog.max = 1;
+          prog.value = 0;
+          const hint = document.createElement("span");
+          hint.className = "muted";
+          hint.textContent = "Corte SFace >= 0.363";
+          card.append(head, prog, hint);
+          grid.append(card);
+          return;
+        }
+
+        faces.forEach((f) => {
+          const known = f.nome && f.nome !== "desconhecido";
+          const score = Number(f.score || 0);
+          const card = document.createElement("div");
+          card.className = "face-chip";
+          card.dataset.match = known ? "known" : "unknown";
+
+          const head = document.createElement("div");
+          head.className = "face-chip-head";
+          const title = document.createElement("span");
+          title.textContent = known
+            ? `Rosto: ${f.nome}`
+            : (f.candidato ? `Desconhecido (~${f.candidato})` : "Desconhecido");
+          const scoreTxt = document.createElement("span");
+          scoreTxt.className = "mono";
+          scoreTxt.textContent = `cos ${score.toFixed(3)}`;
+          head.append(title, scoreTxt);
+
+          const prog = document.createElement("progress");
+          prog.max = 1;
+          prog.value = Math.max(0, Math.min(1, score));
+          prog.className = known ? "tone-accent" : "tone-warn";
+
+          const meta = document.createElement("div");
+          meta.className = "muted mono";
+          meta.textContent = `YuNet ${Number(f.det_score || 0).toFixed(2)} | corte ${Number(f.limiar || 0.363).toFixed(3)} | ${known ? "MATCH OK" : "ABAIXO DO CORTE"}`;
+
+          card.append(head, prog, meta);
+          grid.append(card);
+        });
+      }
+
+      function renderJev(dec, tempos) {
+        if (tempos) {
+          el("latencies-summary").textContent =
+            `STT ${Math.round(tempos.stt_ms || 0)} | Jev ${Math.round(tempos.jev_ms || 0)} | LLM ${Math.round(tempos.persona_ms || 0)} | Total ${Math.round(tempos.total_ms || 0)}`;
+        }
+        if (!dec) return;
+
+        const routePill = el("jev-route-pill");
+        routePill.textContent = `${dec.rota_final}:${dec.subtipo}`;
+        routePill.dataset.tone = dec.rota_final === "ignorar" ? "warn" : (dec.rota_final === "acao_rover" ? "info" : "ok");
+
+        const dir = Number(dec.dirigido_ao_robo || 0);
+        const conf = Number(dec.confianca || 0);
+        el("jev-dir").textContent = dir.toFixed(3);
+        el("prog-dir").value = Math.max(0, Math.min(1, dir));
+        el("jev-conf").textContent = conf.toFixed(3);
+        el("prog-conf").value = Math.max(0, Math.min(1, conf));
+        el("jev-flags").textContent = `img=${dec.precisa_imagem_camera ? "SIM" : "nao"} | conf=${dec.requer_confirmacao ? "SIM" : "nao"}`;
+
+        const probTitle = el("jev-prob-title");
+        if (probTitle) {
+          const backend = dec.respostas_brutas && dec.respostas_brutas.router_backend;
+          probTitle.textContent = backend
+            ? `Distribuição de probabilidades — motor: ${backend}`
+            : "Distribuição de probabilidades em rota_principal (Jev /v1/systemone):";
+        }
+
+        const probBox = el("jev-probs");
+        probBox.replaceChildren();
+        const rp = (dec.respostas_brutas && dec.respostas_brutas.rota_principal) || {};
+        const probs = rp.probabilities || {};
+        const entries = Object.entries(probs).sort((a, b) => b[1] - a[1]);
+        if (!entries.length) {
+          const empty = document.createElement("div");
+          empty.className = "muted";
+          empty.textContent = "Sem distribuição de probabilidades disponível.";
+          probBox.append(empty);
+        } else {
+          entries.forEach(([k, v]) => {
+            const val = Number(v || 0);
+            const row = document.createElement("div");
+            row.className = "prob-row";
+            row.dataset.winner = String(k === rp.choice || k === dec.rota_final);
+
+            const lbl = document.createElement("span");
+            lbl.className = "mono";
+            lbl.textContent = k;
+
+            const prog = document.createElement("progress");
+            prog.max = 1;
+            prog.value = Math.max(0, Math.min(1, val));
+            if (k === rp.choice) prog.className = "tone-accent";
+
+            const pct = document.createElement("span");
+            pct.className = "mono";
+            pct.textContent = `${(val * 100).toFixed(1)}%`;
+
+            row.append(lbl, prog, pct);
+            probBox.append(row);
+          });
+        }
+
+        el("jev-raw-json").textContent = JSON.stringify(dec.respostas_brutas || dec, null, 2);
+      }
+
+      function renderTimeline(items) {
+        const box = el("trace-log");
+        box.replaceChildren();
+        (items || []).slice(-50).forEach((item) => appendLogLine(item, false));
+        box.scrollTop = box.scrollHeight;
+        el("trace-count").textContent = `${(items || []).length} eventos`;
+      }
+
+      function appendLogLine(item, scroll = true) {
+        const box = el("trace-log");
+        const row = document.createElement("div");
+        row.className = "log-line mono";
+        row.dataset.level = item.nivel || "INFO";
+
+        const tag = document.createElement("span");
+        tag.className = "log-tag";
+        tag.textContent = `${item.hora || ""} [${item.canal || "SYS"}]`;
+
+        const txt = document.createElement("span");
+        txt.textContent = item.texto || "";
+
+        row.append(tag, txt);
+        box.append(row);
+        while (box.children.length > 80) {
+          box.removeChild(box.firstElementChild);
+        }
+        el("trace-count").textContent = `${box.children.length} eventos`;
+        if (scroll) box.scrollTop = box.scrollHeight;
+      }
+
+      function renderChat(items) {
+        const box = el("chat-log");
+        box.replaceChildren();
+        if (!items || !items.length) {
+          const d = document.createElement("div");
+          d.className = "muted";
+          d.textContent = "Nenhuma interação ainda nesta sessão.";
+          box.append(d);
+          return;
+        }
+        items.forEach((t) => {
+          const div = document.createElement("div");
+          div.className = "chat-turn";
+
+          const u = document.createElement("div");
+          u.className = "chat-user";
+          u.textContent = `[${t.hora}] ${t.pessoa}: "${t.usuario}"`;
+
+          const b = document.createElement("div");
+          b.className = "chat-bot";
+          const total = t.tempos_ms ? Math.round(t.tempos_ms.total_ms || 0) : 0;
+          b.textContent = `PETeleco (${t.origem || "local"}, ${total} ms): ${t.robo}`;
+
+          div.append(u, b);
+          box.append(div);
+        });
+        box.scrollTop = box.scrollHeight;
+      }
+
+      function renderState(st) {
+        if (!st) return;
+        latestState = st;
+
+        const sv = st.servicos || {};
+        const ea = st.escuta_ativa || {};
+        escutaExigeWake = ea.exigir_wake_continuo !== false;
+        escutaDeadlineMs = ea.ativo ? Date.now() + Number(ea.restante_s || 0) * 1000 : 0;
+        updateEscutaVisual();
+
+        const pRota = el("pill-rota");
+        if (pRota) {
+          const modoRota = sv.roteador_modo || "auto";
+          const alvoRota = modoRota === "jev"
+            ? (sv.jev_online ? "Jev Local" : "Jev (offline)")
+            : (modoRota === "gemini" ? "Gemini Flash" : (sv.gemini_ok ? "Auto (Gemini)" : "Auto (Jev)"));
+          pRota.textContent = `Rota: ${alvoRota}`;
+          pRota.dataset.tone = "info";
+        }
+
+        const pJev = el("pill-jev");
+        pJev.textContent = sv.jev_online ? `Jev: ON (${sv.jev_modelo})` : "Jev: OFFLINE";
+        pJev.dataset.tone = sv.jev_online ? "ok" : "warn";
+        el("btn-start-ollama").hidden = Boolean(sv.jev_online);
+
+        const pGem = el("pill-gemini");
+        pGem.textContent = sv.gemini_ok ? "Gemini: OK" : "Gemini: SEM CHAVE";
+        pGem.dataset.tone = sv.gemini_ok ? "ok" : "warn";
+
+        const pStt = el("pill-stt");
+        pStt.textContent = `STT: ${sv.stt || "--"}`;
+        pStt.dataset.tone = "info";
+
+        const pTts = el("pill-tts");
+        pTts.textContent = `TTS: ${st.tts_ativo ? sv.tts_backend : "MUDO"}`;
+        pTts.dataset.tone = st.tts_ativo ? "ok" : "warn";
+
+        // Toolbar toggles & engine selects
+        el("btn-tts").setAttribute("aria-pressed", String(Boolean(st.tts_ativo)));
+        el("btn-continuo").setAttribute("aria-pressed", String(Boolean(st.continuo_ativo)));
+        if (el("btn-wake-req")) {
+          el("btn-wake-req").setAttribute("aria-pressed", String(Boolean(escutaExigeWake)));
+        }
+        const detOn = st.webcam ? Boolean(st.webcam.deteccao_continua) : true;
+        el("btn-face-detect").setAttribute("aria-pressed", String(detOn));
+
+        const syncSel = (id, val) => {
+          const node = el(id);
+          if (node && val && document.activeElement !== node && Array.from(node.options).some((o) => o.value === val)) {
+            node.value = val;
+          }
+        };
+        syncSel("sel-roteador", sv.roteador_modo);
+        syncSel("sel-stt", sv.stt_modo);
+        syncSel("sel-whisper", sv.whisper_modelo);
+        syncSel("sel-tts-modo", sv.tts_modo);
+        syncSel("sel-tts-voz", sv.tts_voz);
+
+        const corpo = st.estado_corporal || {};
+        document.querySelectorAll("[data-surface]").forEach((b) => {
+          b.setAttribute("aria-pressed", String(b.dataset.surface === corpo.superficie));
+        });
+        document.querySelectorAll("[data-modo]").forEach((b) => {
+          b.setAttribute("aria-pressed", String(b.dataset.modo === st.modo_persona));
+        });
+
+        // Busy state
+        const busy = Boolean(st.ocupado);
+        setButtonDisabled(el("btn-mic"), busy);
+        setButtonDisabled(el("btn-ver-agora"), busy);
+        setButtonDisabled(el("btn-send-text"), busy);
+        setButtonDisabled(el("btn-enroll-face"), busy);
+        setButtonDisabled(el("btn-enroll-voice"), busy);
+
+        // Safety pill
+        const safPill = el("safety-pill");
+        safPill.textContent = corpo.trava_bancada
+          ? `TRAVA ATIVA (${corpo.superficie} / rodas paradas)`
+          : `Superfície: ${corpo.superficie} (${corpo.movimento})`;
+        safPill.dataset.tone = corpo.trava_bancada ? "warn" : "ok";
+
+        // Biometrics & memory
+        const bio = st.biometria || {};
+        el("bio-counts").textContent =
+          `${(bio.rostos_conhecidos || []).length} rostos | ${(bio.vozes_cadastradas || []).length} vozes`;
+
+        const dl = el("membros-datalist");
+        dl.replaceChildren();
+        (bio.membros || []).forEach((m) => {
+          const opt = document.createElement("option");
+          opt.value = m.id;
+          opt.label = `${m.nome} (${m.papel})`;
+          dl.append(opt);
+        });
+
+        const pa = st.pessoa_ativa || {};
+        const perfil = pa.perfil || {};
+        el("mem-person").textContent = perfil.nome ? `${perfil.nome} (${pa.id})` : (pa.id || "desconhecido");
+        const lt = st.last_turn;
+        el("mem-id-mode").textContent = (lt && lt.resultado && lt.resultado.modo_identificacao) || "--";
+        if (lt && lt.tempos_ms) {
+          el("turn-timing-pill").textContent = `Último turno: ${Math.round(lt.tempos_ms.total_ms || 0)} ms`;
+        }
+
+        const traitsBox = el("mem-traits");
+        traitsBox.replaceChildren();
+        const tracos = perfil.tracos_personalidade || [];
+        if (!tracos.length) {
+          const sp = document.createElement("span");
+          sp.className = "muted";
+          sp.textContent = "Sem traços registrados ainda.";
+          traitsBox.append(sp);
+        } else {
+          tracos.forEach((t) => {
+            const sp = document.createElement("span");
+            sp.className = "mini-tag";
+            sp.textContent = t;
+            traitsBox.append(sp);
+          });
+        }
+
+        const epsBox = el("episodes-list");
+        epsBox.replaceChildren();
+        const eps = pa.episodios_sqlite && pa.episodios_sqlite.length
+          ? pa.episodios_sqlite.map((e) => `${e.timestamp}: ${e.resumo}`)
+          : (perfil.ultimos_episodios || []);
+        if (!eps.length) {
+          const d = document.createElement("div");
+          d.className = "muted";
+          d.textContent = "Sem episódios recentes.";
+          epsBox.append(d);
+        } else {
+          eps.forEach((ep) => {
+            const d = document.createElement("div");
+            d.className = "mono";
+            d.style.marginBlockEnd = "0.25rem";
+            d.textContent = ep;
+            epsBox.append(d);
+          });
+        }
+
+        renderVision(st.webcam);
+        renderStage(st.stage || "pronto", st.stage_msg);
+        if (lt) renderJev(lt.decisao_jev, lt.tempos_ms);
+        renderChat(st.chat_history);
+        renderTimeline(st.timeline);
+      }
+
+      // Wire controls
+      el("btn-mic").addEventListener("click", () => {
+        if (!isDisabled(el("btn-mic"))) postJson("/api/mic");
+      });
+
+      el("btn-continuo").addEventListener("click", () => {
+        const atual = el("btn-continuo").getAttribute("aria-pressed") === "true";
+        postJson("/api/continuo", { ativo: !atual });
+      });
+
+      el("btn-escuta-ativa").addEventListener("click", () => {
+        const ativa = escutaDeadlineMs > Date.now();
+        postJson("/api/config", { escuta_ativa: !ativa });
+      });
+
+      el("btn-wake-req").addEventListener("click", () => {
+        const atual = el("btn-wake-req").getAttribute("aria-pressed") === "true";
+        postJson("/api/config", { exigir_wake_continuo: !atual });
+      });
+
+      el("sel-roteador").addEventListener("change", (ev) => {
+        postJson("/api/config", { roteador_modo: ev.target.value });
+      });
+
+      el("sel-stt").addEventListener("change", (ev) => {
+        postJson("/api/config", { stt_modo: ev.target.value });
+      });
+
+      el("sel-whisper").addEventListener("change", (ev) => {
+        postJson("/api/config", { whisper_modelo: ev.target.value });
+      });
+
+      el("sel-tts-modo").addEventListener("change", (ev) => {
+        postJson("/api/config", { tts_modo: ev.target.value });
+      });
+
+      el("sel-tts-voz").addEventListener("change", (ev) => {
+        postJson("/api/config", { tts_voz: ev.target.value });
+      });
+
+      setInterval(updateEscutaVisual, 500);
+
+      el("btn-ver-agora").addEventListener("click", () => {
+        if (isDisabled(el("btn-ver-agora"))) return;
+        postJson("/api/chat", {
+          texto: "PETeleco, olha pela câmera e descreve o que você tá vendo agora.",
+          incluir_webcam: true,
+        });
+      });
+
+      el("btn-tts").addEventListener("click", () => {
+        const atual = el("btn-tts").getAttribute("aria-pressed") === "true";
+        postJson("/api/config", { tts_ativo: !atual });
+      });
+
+      el("btn-face-detect").addEventListener("click", () => {
+        const atual = el("btn-face-detect").getAttribute("aria-pressed") === "true";
+        postJson("/api/config", { deteccao_continua: !atual });
+      });
+
+      document.querySelectorAll("[data-surface]").forEach((btn) => {
+        btn.addEventListener("click", () => postJson("/api/config", { superficie: btn.dataset.surface }));
+      });
+
+      document.querySelectorAll("[data-modo]").forEach((btn) => {
+        btn.addEventListener("click", () => postJson("/api/config", { modo_persona: btn.dataset.modo }));
+      });
+
+      el("chat-form").addEventListener("submit", (ev) => {
+        ev.preventDefault();
+        if (isDisabled(el("btn-send-text"))) return;
+        const txt = el("chat-input").value.trim();
+        if (!txt) return;
+        el("chat-input").value = "";
+        postJson("/api/chat", { texto: txt });
+      });
+
+      document.querySelectorAll("[data-quick]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          if (isDisabled(el("btn-send-text"))) return;
+          postJson("/api/chat", {
+            texto: btn.dataset.quick,
+            incluir_webcam: btn.dataset.vision === "1",
+          });
+        });
+      });
+
+      el("btn-enroll-face").addEventListener("click", async () => {
+        if (isDisabled(el("btn-enroll-face"))) return;
+        const nome = el("enroll-name").value.trim();
+        if (!nome) return setStatus("Informe um nome ou ID antes de cadastrar o rosto.");
+        const res = await postJson("/api/enroll_face", { pessoa: nome });
+        setStatus(res.mensagem || "Cadastro de rosto concluído.");
+      });
+
+      el("btn-enroll-voice").addEventListener("click", async () => {
+        if (isDisabled(el("btn-enroll-voice"))) return;
+        const nome = el("enroll-name").value.trim();
+        if (!nome) return setStatus("Informe um nome ou ID antes de gravar a voz.");
+        const res = await postJson("/api/enroll_voice", { pessoa: nome });
+        setStatus(res.mensagem || "Gravando voz por 4 segundos...");
+      });
+
+      el("btn-start-ollama").addEventListener("click", async () => {
+        setStatus("Iniciando Ollama local em CPU...");
+        await postJson("/api/ollama_start");
+      });
+
+      // Fallback roving tabindex when native focusgroup is unavailable
+      if (!("focusGroup" in HTMLElement.prototype)) {
+        const bar = el("main-toolbar");
+        const items = Array.from(bar.querySelectorAll("button"));
+        items.forEach((b, i) => { b.tabIndex = i === 0 ? 0 : -1; });
+        bar.addEventListener("focusin", ({ target }) => {
+          if (items.includes(target)) {
+            items.forEach((b) => { b.tabIndex = b === target ? 0 : -1; });
+          }
+        });
+        bar.addEventListener("keydown", (ev) => {
+          const idx = items.indexOf(document.activeElement);
+          if (idx < 0) return;
+          const rtl = getComputedStyle(bar).direction === "rtl";
+          const dir = rtl ? -1 : 1;
+          let next = null;
+          if (ev.key === "ArrowRight") next = (idx + dir + items.length) % items.length;
+          else if (ev.key === "ArrowLeft") next = (idx - dir + items.length) % items.length;
+          else if (ev.key === "Home") next = 0;
+          else if (ev.key === "End") next = items.length - 1;
+          if (next !== null) {
+            ev.preventDefault();
+            items[next].focus();
+          }
+        });
+      }
+
+      // Live Server-Sent Events stream
+      function conectarSSE() {
+        const ssePill = el("pill-sse");
+        const es = new EventSource("/api/events");
+        es.onopen = () => {
+          ssePill.textContent = "SSE: AO VIVO";
+          ssePill.dataset.tone = "ok";
+        };
+        es.onerror = () => {
+          ssePill.textContent = "SSE: reconectando";
+          ssePill.dataset.tone = "warn";
+        };
+        es.addEventListener("state", (ev) => renderState(JSON.parse(ev.data)));
+        es.addEventListener("vision", (ev) => renderVision(JSON.parse(ev.data)));
+        es.addEventListener("stage", (ev) => {
+          const d = JSON.parse(ev.data);
+          renderStage(d.stage, d.mensagem);
+        });
+        es.addEventListener("jev", (ev) => renderJev(JSON.parse(ev.data), null));
+        es.addEventListener("log", (ev) => appendLogLine(JSON.parse(ev.data), true));
+        es.addEventListener("busy", (ev) => {
+          if (latestState) {
+            latestState.ocupado = Boolean(JSON.parse(ev.data).ocupado);
+            renderState(latestState);
+          }
+        });
+      }
+
+      conectarSSE();
+    })();
+  </script>
+</body>
+</html>

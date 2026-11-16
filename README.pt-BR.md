@@ -24,11 +24,11 @@ Os dois repositórios evoluem em paralelo sobre o **mesmo contexto físico e har
 Mandar toda frase capturada pelo microfone e todo frame de câmera para um LLM/VLM na nuvem torna o robô lento, caro, vulnerável a conversas paralelas no ambiente e arriscado para movimentar motores diretamente.
 
 O **PETeleco** resolve isso com uma **arquitetura hierárquica em 5 camadas**:
-1. **Triagem local imediata (R$ 0 / baixa latência):** Um roteador SystemOne leve avalia fala + estado dos sensores em **~353 ms** (`p50`) antes de acionar áudio pesado ou nuvem — ignorando conversas paralelas e TV.
-2. **Resposta social instantânea (`0 ms` de TTS):** Saudações, despedidas, confirmações e elogios disparam áudios `.wav` pré-gravados da persona do PETeleco, sem depender de síntese nem API externa.
-3. **Funções determinísticas + TTS local:** Hora/data, clima, bateria/temperatura e identificação facial usam handlers locais determinísticos com síntese offline em CPU (**`Piper TTS`**).
+1. **Triagem local & Wake-word imediata (R$ 0 / baixa latência):** No modo contínuo mãos-livres, o modo *"Standby"* ignora conversas paralelas até você dizer `"PETeleco"`, abrindo uma janela rolante de **60 s de Escuta Ativa**. Na RTX 3050 CUDA, o SystemOne (`tev1:0.8b`) roteia a fala em **~353 ms** (`p50`); em notebooks só com CPU (`--roteador auto`), o roteador JSON `Gemini Flash-Lite` decide em `~0,7–1,9 s` contra `~10–20 s` no Ollama em CPU.
+2. **Resposta social instantânea (`0 ms` de LLM):** Saudações, confirmações de wake-word, despedidas e elogios disparam respostas/áudios curtos da persona do PETeleco sem depender de geração em nuvem.
+3. **Funções determinísticas + TTS natural PT-BR:** Data/hora, clima, bateria/temperatura e identificação facial usam handlers determinísticos com síntese neural **`Edge TTS`** (`pt-BR-AntonioNeural`, ritmo natural de conversa) ou **`Gemini TTS`**, com fallback offline em CPU (**`Piper TTS`**).
 4. **Travas probabilísticas de segurança motora:** Comandos físicos exigem confiança calibrada (`>= 0,80` execução direta; `0,50–0,79` pede confirmação por voz; parada explícita `>= 0,90` corta imediatamente).
-5. **Nuvem estritamente sob demanda:** A API multimodal (`Gemini`) só entra quando o roteador classifica necessidade real de `Image-to-Text` ou conversa aberta complexa.
+5. **Nuvem estritamente sob demanda:** A API multimodal (`Gemini`) só entra quando o roteador classifica necessidade real de `Image-to-Text` ou conversa aberta com humor orgânico.
 
 ---
 
@@ -87,9 +87,9 @@ Projetado para manter **todos os modelos ativos residentes dentro de 8 GB de VRA
 
 | Camada | Componente / Modelo | Função | Execução | Status |
 |---|---|---|---|---|
-| **C1 (Áudio)** | `VAD RMS` + `faster-whisper` (`small` CUDA / `base` CPU) | Captura contínua PT-BR + biometria vocal `torchaudio_192d` | CPU / GPU CUDA (`auto`) | **✅ Implementado e Testado** |
-| **C2 (Roteador)** | **`tev1:0.8b`** (`772.85M`, `Q8_0`, `qwen35`) | Avaliação paralela `noul`/`choice` em `/v1/systemone` | Ollama CUDA (`1245,7 MiB`) ou CPU | **✅ Implementado e Benchmarked** |
-| **C3 (Voz)** | **`Piper TTS`** (`pt_BR-faber-medium`) + fallback SO | Síntese offline de voz PT-BR via `sounddevice` / Pulse / ALSA | CPU (`~0 GB` VRAM) | **✅ Implementado e Testado** |
+| **C1 (Áudio)** | `VAD RMS (pre-roll 450 ms)` + `Gemini Audio STT` / `faster-whisper` (`small`) + Wake-word `"PETeleco"` | Transcrição PT-BR (`Standby <-> Escuta Ativa 60 s`) + biometria vocal `torchaudio_192d` | Cloud STT / CPU / CUDA (`auto`) | **✅ Implementado e Testado** |
+| **C2 (Roteador)** | **`tev1:0.8b`** (`772.85M`, `Q8_0`, `/v1/systemone`) + JSON `Gemini Flash-Lite` (`auto` CPU) | Avaliação paralela `noul`/`choice` (CUDA) ou triagem rápida em JSON (CPU) | Ollama CUDA (`1245,7 MiB`) / API | **✅ Implementado e Benchmarked** |
+| **C3 (Voz)** | **`Edge Neural TTS`** (`pt-BR-AntonioNeural`) / `Gemini TTS` + fallback **`Piper TTS`** offline | Síntese conversacional PT-BR via `sounddevice` / Pulse / ALSA | Neural Online / CPU Offline (`~0 GB`) | **✅ Implementado e Testado** |
 | **C3 (Visão)** | `YuNet` + `SFace` (ONNX, `128-D`) + `WebcamLive` HUD | Detecção facial, biometria (`>= 0,363`) e preview ao vivo `--preview` | OpenCV ONNX local | **✅ Implementado (`Rover` + `PETeleco`)** |
 | **C3 (Visão)** | `YOLOv8n` + `MediaPipe Hands` | Objetos, máquina de estados trekking e gestos | Python / ONNX local | Validado no `Rover` |
 | **C3 (Memória)** | `SQLite` / `JSON` em 3 camadas | Fatos quentes e episódios por pessoa reconhecida | Disco local (`data/`) | **✅ Implementado e Testado** |
@@ -148,14 +148,16 @@ PETeleco/
 │   └── ARCHITECTURE.pt-BR.md   # Protocolos, travas e modelos (Português-BR)
 └── src/
     ├── __init__.py
-    ├── escuta_stt.py           # Camada 1: Microfone (VAD + resample) + STT (faster-whisper / Gemini)
+    ├── escuta_stt.py           # Camada 1: Microfone (VAD pre-roll) + STT (Gemini Audio / faster-whisper small)
     ├── voz_biometria.py        # Camada 1: Speaker Verification na CPU (`torchaudio_192d`)
-    ├── router_systemone.py     # Camada 2: Roteador cognitivo Jev-based (/v1/systemone)
+    ├── router_systemone.py     # Camada 2: Roteador Jev (/v1/systemone) + JSON Gemini rápido + Escuta Ativa
     ├── memoria_pessoas.py      # Camada 3: Memória em 3 camadas (JSON quente + SQLite frio)
-    ├── tts_local.py            # Camada 3: Síntese offline Piper TTS + fallbacks SO (Linux/Windows)
+    ├── tts_local.py            # Camada 3: Edge Neural / Gemini TTS + fallback offline Piper TTS
     ├── visao_webcam.py         # Camada 3: Captura contínua WebcamLive + janela HUD YuNet/SFace
     ├── persona_peteleco.py     # Camada 3/4: Motor da persona, estado corporal e Gemini REST
-    ├── testar_peteleco.py      # Bancada & simulador ao vivo (Webcam + Voz + STT + Jev + TTS)
+    ├── testar_peteleco.py      # Bancada & simulador ao vivo (CLI + --ui)
+    ├── ui_peteleco.py          # UI Web local (MJPEG YuNet+SFace + SSE "Debaixo dos Panos")
+    ├── static/ui_peteleco.html # Frontend Web sem dependências externas
     └── benchmark_router.py     # Bateria de benchmark isolado (36 casos)
 ```
 
@@ -183,28 +185,29 @@ PETeleco/
      python3 -m venv .venv
      source .venv/bin/activate
      pip install --index-url https://download.pytorch.org/whl/cpu torch torchaudio
-     pip install -r requirements.txt numpy sounddevice faster-whisper opencv-python piper-tts
+     pip install -r requirements.txt numpy sounddevice faster-whisper opencv-python piper-tts edge-tts
      ```
      *(Se usar `uv`: `uv pip install --python .venv/bin/python ...`)*
    - **Windows (CUDA / GPU NVIDIA):**
      ```powershell
      python -m venv .venv
      .\.venv\Scripts\Activate.ps1
-     pip install -r requirements.txt numpy sounddevice faster-whisper opencv-python piper-tts
+     pip install -r requirements.txt numpy sounddevice faster-whisper opencv-python piper-tts edge-tts
      pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu124
      ```
-4. *(Opcional para Camada 4 / `cognicao_gemini` na nuvem)* Copie `.env.example` para `.env` na raiz (ou use `../rover/.env`) e preencha `GEMINI_API_KEY`. Sem chave, todas as rotas locais (`pool_fala_pronta`, `fala_parametrizada`, `acao_rover` com trava de bancada, webcam `YuNet+SFace`, `Whisper` e `Piper TTS`) funcionam 100% offline.
-5. Rode o **simulador completo ao vivo (Webcam HUD + Microfone + STT + Biometria + Jev + Persona + Voz Piper)** ou o benchmark isolado:
+4. *(Recomendado para STT `Gemini`, roteamento rápido em CPU e VLM na nuvem; modo 100% offline também suportado)* Copie `.env.example` para `.env` na raiz (ou use `../rover/.env`) e preencha `GEMINI_API_KEY`. Sem chave, todas as rotas locais (`pool_fala_pronta`, `fala_parametrizada`, `acao_rover` com trava de bancada, webcam `YuNet+SFace`, `faster-whisper small`, `tev1:0.8b` e `Piper TTS`) seguem funcionando offline.
+5. Rode a **UI Web completa ao vivo (Webcam MJPEG com YuNet+SFace + Debaixo dos Panos + Escuta Ativa + TTS Neural PT-BR)** ou a bancada CLI:
    ```bash
-   # Simulação mãos-livres completa com janela HUD da webcam + TTS em voz alta:
-   python -m src.testar_peteleco --preview --continuo --tts
+   # UI Web local (sobe Ollama automaticamente, abre navegador + webcam + seletores ao vivo):
+   python -m src.ui_peteleco
 
-   # Ou bancada interativa por comandos no terminal (+ HUD visual opcional):
-   python -m src.testar_peteleco --preview --tts
+   # Ou via bancada CLI mãos-livres (diga "PETeleco" para abrir janela de 60 s de Escuta Ativa):
+   python -m src.testar_peteleco --preview --continuo --tts
 
    # Benchmark isolado da Camada 2 (36 casos):
    python src/benchmark_router.py --suite todas --rodadas 2
    ```
-   - **Na primeira execução:** `YuNet`, `SFace` (`models/`) e a voz `pt_BR-faber-medium` (`models/piper/`) são baixados automaticamente caso ainda não existam em disco.
-   - **Dica de calibragem no microfone:** `--whisper-modelo auto` escolhe `small` em CUDA e `base` em CPU. Se o ambiente estiver barulhento ou o microfone muito sensível, passe `--mic <indice>` (veja com `/mics`) e `--limiar-mic 0.025`.
+   - **Na primeira execução:** `YuNet`, `SFace` (`models/`) e a voz offline `pt_BR-faber-medium` (`models/piper/`) são baixados automaticamente como backup offline.
+   - **Opções de STT, TTS e Roteador:** `--roteador auto` usa Jev em GPUs CUDA e `Gemini Flash-Lite` em notebooks só com CPU (`--roteador jev` força Ollama local). `--stt-modo auto` usa `Gemini Áudio` primeiro na CPU (com fallback em `faster-whisper small`); `--tts-modo auto` usa `Edge Neural` (`pt-BR-AntonioNeural`, alternável na UI ou via `--tts-voz`) com fallbacks `Gemini TTS` e `Piper TTS` offline.
+   - **Wake-word e calibragem do microfone:** No modo contínuo (`--continuo` ou botão na UI), falas paralelas são ignoradas em *Standby* até você dizer **`"PETeleco"`**, abrindo uma janela rolante de **60 s** em *Escuta Ativa* (desative com `--sem-wake-word` ou pelo botão `Wake "PETeleco"`). Ajuste a sensibilidade com `--mic <indice>` (`/mics`) e `--limiar-mic 0.012`.
    - **Comandos úteis dentro da bancada:** `[ENTER]` vazio para falar 1 turno no microfone, `/continuo` para alternar escuta contínua, `/preview` para abrir/fechar o HUD da webcam, `/rosto <nome>` e `/voz <nome>` para cadastrar seu rosto e voz, `/corpo <chao|bancada|no_colo>` para testar a trava anti-queda, `/foto <arquivo> [pergunta]` para enviar imagem e `/perfil` para inspecionar a memória em 3 camadas.

@@ -13,6 +13,7 @@ Ordem de transcricao:
 import base64
 from collections import deque
 import io
+import os
 import threading
 import time
 from typing import Any, Callable, List, Optional, Tuple
@@ -45,16 +46,55 @@ class EscutaSTT:
         whisper_model_size: str = "small",
         aliases_stt: Optional[List[str]] = None,
         device_index: Optional[int] = None,
+        stt_modo: Optional[str] = None,
     ) -> None:
         self.sample_rate = sample_rate
         self.whisper_model_size = whisper_model_size
         self.aliases_stt = aliases_stt or []
         self.device_index = device_index
         self._env = carregar_env()
+        modo_raw = (stt_modo or self._env.get("PETELECO_STT_MODE") or "auto").strip().lower()
+        self.stt_modo = modo_raw if modo_raw in ("auto", "gemini", "whisper") else "auto"
         self._whisper_model: Any = None
         self._whisper_device_label: str = ""
         self._whisper_falhou: bool = False
         self._session = requests.Session()
+
+    def configurar(
+        self,
+        *,
+        stt_modo: Optional[str] = None,
+        whisper_model_size: Optional[str] = None,
+    ) -> None:
+        """Permite alternar backend ou tamanho do Whisper em runtime (UI/CLI)."""
+        if stt_modo and stt_modo in ("auto", "gemini", "whisper"):
+            self.stt_modo = stt_modo
+        if whisper_model_size and whisper_model_size != self.whisper_model_size:
+            self.whisper_model_size = whisper_model_size
+            self._whisper_model = None
+            self._whisper_falhou = False
+
+    def _gemini_disponivel(self) -> bool:
+        return bool(self._env.get("GEMINI_API_KEY", "").strip())
+
+    def _usar_gemini_primeiro(self) -> bool:
+        if self.stt_modo == "gemini":
+            return self._gemini_disponivel()
+        if self.stt_modo == "whisper":
+            return False
+        # Modo auto: na CUDA, faster-whisper local (~250 ms) vence; na CPU, Gemini audio (~1.5 s) e muito mais rapido e preciso
+        return (not torch.cuda.is_available()) and self._gemini_disponivel()
+
+    def descrever_backend(self) -> str:
+        hw = "CUDA" if torch.cuda.is_available() else "CPU"
+        if self._usar_gemini_primeiro():
+            gem_mod = (self._env.get("GEMINI_STT_MODEL") or "gemini-3.5-flash-lite").strip()
+            return f"gemini-stt:{gem_mod} (fallback whisper {self.whisper_model_size}/{hw})"
+        if _HAS_FASTER_WHISPER:
+            return f"faster-whisper ({self.whisper_model_size}/{hw})"
+        if self._gemini_disponivel():
+            return "gemini-stt:gemini-3.5-flash-lite"
+        return "indisponivel"
 
     @staticmethod
     def listar_microfones() -> List[Tuple[int, str]]:
@@ -101,25 +141,27 @@ class EscutaSTT:
 
     def gravar_microfone(
         self,
-        duracao_max_s: float = 10.0,
-        silencio_fim_s: float = 1.2,
+        duracao_max_s: float = 12.0,
+        silencio_fim_s: float = 1.0,
         timeout_espera_s: float = 7.0,
-        limiar_rms: float = 0.015,
+        limiar_rms: float = 0.012,
         stop_event: Optional[threading.Event] = None,
         on_speech_start: Optional[Callable[[], None]] = None,
     ) -> np.ndarray:
         """
         Escuta o microfone, espera o inicio da fala e para no silencio pos-fala.
 
-        Mantem um pre-roll de 350 ms para nao cortar a primeira silaba.
+        Mantem um pre-roll de 450 ms para nao cortar a primeira silaba (ex.: 'Que dia')
+        e ignora estalos curtissimos (< 2 blocos consecutivos acima do limiar).
         """
         sr_cap = self._resolver_sample_rate_entrada()
         bloco_ms = 50
         bloco_amostras = int(sr_cap * (bloco_ms / 1000.0))
-        pre_roll = deque(maxlen=max(1, int(350 / bloco_ms)))
+        pre_roll = deque(maxlen=max(1, int(450 / bloco_ms)))
         blocos_gravados: List[np.ndarray] = []
 
         falando = False
+        blocos_voz = 0
         t_inicio = time.monotonic()
         t_ultima_fala = t_inicio
 
@@ -142,6 +184,7 @@ class EscutaSTT:
                     pre_roll.append(bloco_1d)
                     if rms >= limiar_rms:
                         falando = True
+                        blocos_voz = 1
                         t_ultima_fala = agora
                         blocos_gravados.extend(pre_roll)
                         if on_speech_start is not None:
@@ -150,14 +193,15 @@ class EscutaSTT:
                         return np.zeros(0, dtype=np.float32)
                 else:
                     blocos_gravados.append(bloco_1d)
-                    if rms >= limiar_rms * 0.8:
+                    if rms >= limiar_rms * 0.75:
+                        blocos_voz += 1
                         t_ultima_fala = agora
                     if (agora - t_ultima_fala) >= silencio_fim_s:
                         break
                     if (agora - t_inicio) >= duracao_max_s:
                         break
 
-        if not blocos_gravados:
+        if not blocos_gravados or blocos_voz < 2:
             return np.zeros(0, dtype=np.float32)
         return self._reamostrar_para_alvo(np.concatenate(blocos_gravados), sr_cap)
 
@@ -168,6 +212,28 @@ class EscutaSTT:
             "Niterói",
             "Praia Vermelha",
             "Professor Felipe Sass",
+            "Santisteban",
+            "ESP32",
+            "GPIO",
+            "I2C",
+            "UART",
+            "OLED",
+            "MOSFET",
+            "DS18B20",
+            "KiCad",
+            "TB6612FNG",
+            "Mini 560",
+            "OneWire",
+            "PWM",
+            "ADC",
+            "D34",
+            "microfarads",
+            "nanofarads",
+            "quilo-ohms",
+            "multímetro",
+            "osciloscópio",
+            "Que dia é hoje?",
+            "Vamos para a frente, pai.",
         ]
         todos = base + [a for a in self.aliases_stt if a not in base]
         return "Vocabulário do laboratório: " + ", ".join(todos) + "."
@@ -179,13 +245,16 @@ class EscutaSTT:
             return self._whisper_model
 
         tentativas = [("cuda", "float16"), ("cpu", "int8")] if torch.cuda.is_available() else [("cpu", "int8")]
+        threads_cpu = min(8, max(4, int(os.cpu_count() or 4)))
         ultimo_erro = ""
         for device, compute_type in tentativas:
             try:
+                kwargs = {"device": device, "compute_type": compute_type}
+                if device == "cpu":
+                    kwargs["cpu_threads"] = threads_cpu
                 self._whisper_model = WhisperModel(
                     self.whisper_model_size,
-                    device=device,
-                    compute_type=compute_type,
+                    **kwargs,
                 )
                 self._whisper_device_label = f"faster-whisper({self.whisper_model_size}/{device})"
                 return self._whisper_model
@@ -196,6 +265,27 @@ class EscutaSTT:
             print(f"[AVISO STT] Falha ao carregar faster-whisper ({ultimo_erro}); usando fallback.")
         self._whisper_falhou = True
         return None
+
+    def _transcrever_whisper(self, arr: np.ndarray, prompt_stt: str) -> Tuple[str, str]:
+        modelo = self._carregar_whisper()
+        if modelo is None:
+            return "", ""
+        try:
+            # Desativa segundo vad_filter interno porque o trecho ja vem recortado por VAD + pre-roll
+            segmentos, _ = modelo.transcribe(
+                arr,
+                language="pt",
+                beam_size=5,
+                vad_filter=False,
+                condition_on_previous_text=False,
+                no_speech_threshold=0.65,
+                initial_prompt=prompt_stt,
+            )
+            texto = " ".join(seg.text.strip() for seg in segmentos if seg.text.strip()).strip()
+            return texto, self._whisper_device_label
+        except Exception:
+            self._whisper_falhou = True
+            return "", ""
 
     def transcrever(
         self,
@@ -213,21 +303,16 @@ class EscutaSTT:
         prompt_stt = initial_prompt or self.construir_initial_prompt()
         t0 = time.perf_counter()
 
-        modelo = self._carregar_whisper()
-        if modelo is not None:
-            try:
-                segmentos, _ = modelo.transcribe(
-                    arr,
-                    language="pt",
-                    vad_filter=True,
-                    initial_prompt=prompt_stt,
-                )
-                texto = " ".join(seg.text.strip() for seg in segmentos if seg.text.strip()).strip()
+        if self._usar_gemini_primeiro():
+            texto_gem, backend_gem = self._transcrever_gemini_rest(arr, sr, prompt_stt)
+            if texto_gem or not backend_gem.startswith("erro_"):
                 lat_ms = (time.perf_counter() - t0) * 1000.0
-                return texto, self._whisper_device_label, lat_ms
-            except Exception:
-                # Se CUDA falhar em runtime (ex.: cuDNN ausente), cai para Gemini REST
-                self._whisper_falhou = True
+                return texto_gem, backend_gem, lat_ms
+
+        texto_wh, backend_wh = self._transcrever_whisper(arr, prompt_stt)
+        if backend_wh:
+            lat_ms = (time.perf_counter() - t0) * 1000.0
+            return texto_wh, backend_wh, lat_ms
 
         texto_gem, backend_gem = self._transcrever_gemini_rest(arr, sr, prompt_stt)
         lat_ms = (time.perf_counter() - t0) * 1000.0
@@ -271,8 +356,9 @@ class EscutaSTT:
                 modelos.append(m)
 
         instrucao = (
-            "Transcreva fielmente em português brasileiro apenas o que foi falado no áudio, "
-            "sem explicações, sem aspas e mantendo nomes/apelidos quando ouvidos. "
+            "Transcreva fielmente em portugues brasileiro exatamente o que foi falado no audio, "
+            "sem explicacoes, sem aspas, mantendo pontuacao natural e nomes/apelidos quando ouvidos. "
+            "Se houver apenas ruido, batida ou silencio sem fala inteligivel, responda exatamente VAZIO. "
             + prompt_stt
         )
         payload = {
@@ -304,6 +390,8 @@ class EscutaSTT:
                     for p in partes
                     if not p.get("thought") and p.get("text")
                 ).strip()
+                if texto.strip(" .!?").upper() == "VAZIO":
+                    texto = ""
                 return texto, f"gemini_stt({modelo})"
             except Exception:
                 continue

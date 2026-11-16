@@ -1,0 +1,1964 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>PETeleco — Arena Multi-Chat de System Prompts (Avaliação 0–5)</title>
+  <style>
+    :root {
+      --bg-light: #f2f5f8;
+      --surface-light: #ffffff;
+      --surface-alt-light: #eaf0f6;
+      --border-light: #c8d4e0;
+      --text-light: #0f1d2c;
+      --muted-light: #495d72;
+      --accent-light: #047857;
+      --accent-text-light: #ffffff;
+      --info-light: #0369a1;
+      --info-text-light: #ffffff;
+      --warn-light: #92400e;
+      --warn-bg-light: #fef3c7;
+      --danger-light: #b91c1c;
+      --danger-text-light: #ffffff;
+      --danger-bg-light: #fee2e2;
+      --user-bubble-light: #e0f2fe;
+      --bot-bubble-light: #f8fafc;
+      --track-light: #e2e8f0;
+      --thumb-light: #6d8094;
+
+      --bg-dark: #0a1016;
+      --surface-dark: #111923;
+      --surface-alt-dark: #182330;
+      --border-dark: #2a3c4f;
+      --text-dark: #e6eef7;
+      --muted-dark: #93a7bd;
+      --accent-dark: #34d399;
+      --accent-text-dark: #052217;
+      --info-dark: #38bdf8;
+      --info-text-dark: #041926;
+      --warn-dark: #fbbf24;
+      --warn-bg-dark: #332508;
+      --danger-dark: #f87171;
+      --danger-text-dark: #2a070b;
+      --danger-bg-dark: #361317;
+      --user-bubble-dark: #0f2940;
+      --bot-bubble-dark: #151f2b;
+      --track-dark: #141e29;
+      --thumb-dark: #556a80;
+
+      --bg: var(--bg-light);
+      --surface: var(--surface-light);
+      --surface-alt: var(--surface-alt-light);
+      --border: var(--border-light);
+      --text: var(--text-light);
+      --muted: var(--muted-light);
+      --accent: var(--accent-light);
+      --accent-text: var(--accent-text-light);
+      --info: var(--info-light);
+      --info-text: var(--info-text-light);
+      --warn: var(--warn-light);
+      --warn-bg: var(--warn-bg-light);
+      --danger: var(--danger-light);
+      --danger-text: var(--danger-text-light);
+      --danger-bg: var(--danger-bg-light);
+      --user-bubble: var(--user-bubble-light);
+      --bot-bubble: var(--bot-bubble-light);
+      --scroll-track: var(--track-light);
+      --scroll-thumb: var(--thumb-light);
+
+      color-scheme: light dark;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: var(--bg-dark);
+        --surface: var(--surface-dark);
+        --surface-alt: var(--surface-alt-dark);
+        --border: var(--border-dark);
+        --text: var(--text-dark);
+        --muted: var(--muted-dark);
+        --accent: var(--accent-dark);
+        --accent-text: var(--accent-text-dark);
+        --info: var(--info-dark);
+        --info-text: var(--info-text-dark);
+        --warn: var(--warn-dark);
+        --warn-bg: var(--warn-bg-dark);
+        --danger: var(--danger-dark);
+        --danger-text: var(--danger-text-dark);
+        --danger-bg: var(--danger-bg-dark);
+        --user-bubble: var(--user-bubble-dark);
+        --bot-bubble: var(--bot-bubble-dark);
+        --scroll-track: var(--track-dark);
+        --scroll-thumb: var(--thumb-dark);
+      }
+    }
+
+    @supports (color: light-dark(white, black)) {
+      :root {
+        --bg: light-dark(var(--bg-light), var(--bg-dark));
+        --surface: light-dark(var(--surface-light), var(--surface-dark));
+        --surface-alt: light-dark(var(--surface-alt-light), var(--surface-alt-dark));
+        --border: light-dark(var(--border-light), var(--border-dark));
+        --text: light-dark(var(--text-light), var(--text-dark));
+        --muted: light-dark(var(--muted-light), var(--muted-dark));
+        --accent: light-dark(var(--accent-light), var(--accent-dark));
+        --accent-text: light-dark(var(--accent-text-light), var(--accent-text-dark));
+        --info: light-dark(var(--info-light), var(--info-dark));
+        --info-text: light-dark(var(--info-text-light), var(--info-text-dark));
+        --warn: light-dark(var(--warn-light), var(--warn-dark));
+        --warn-bg: light-dark(var(--warn-bg-light), var(--warn-bg-dark));
+        --danger: light-dark(var(--danger-light), var(--danger-dark));
+        --danger-text: light-dark(var(--danger-text-light), var(--danger-text-dark));
+        --danger-bg: light-dark(var(--danger-bg-light), var(--danger-bg-dark));
+        --user-bubble: light-dark(var(--user-bubble-light), var(--user-bubble-dark));
+        --bot-bubble: light-dark(var(--bot-bubble-light), var(--bot-bubble-dark));
+        --scroll-track: light-dark(var(--track-light), var(--track-dark));
+        --scroll-thumb: light-dark(var(--thumb-light), var(--thumb-dark));
+      }
+    }
+
+    html {
+      accent-color: var(--accent);
+      scrollbar-color: var(--scroll-thumb) var(--scroll-track);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, sans-serif;
+      line-height: 1.45;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-block-size: 100dvb;
+    }
+
+    .visually-hidden:where(:not(:focus-within, :active)) {
+      position: absolute !important;
+      clip-path: inset(50%) !important;
+      overflow: hidden !important;
+      width: 1px !important;
+      height: 1px !important;
+      margin: -1px !important;
+      padding: 0 !important;
+      border: 0 !important;
+      white-space: nowrap !important;
+    }
+
+    .mono {
+      font-family: ui-monospace, "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+
+    .shell {
+      max-inline-size: 1840px;
+      margin-inline: auto;
+      padding: 0.75rem 1rem 1.25rem;
+      display: grid;
+      gap: 0.75rem;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+      padding: 0.85rem;
+      display: grid;
+      gap: 0.65rem;
+      min-inline-size: 0;
+    }
+
+    .topbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      padding: 0.75rem 1rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: clamp(1.05rem, 0.9rem + 0.5vw, 1.28rem);
+      font-weight: 700;
+    }
+
+    .status-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      align-items: center;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      padding: 0.22rem 0.6rem;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--surface-alt);
+      font-size: 0.75rem;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .pill[data-tone="ok"] { border-color: var(--accent); color: var(--accent); }
+    .pill[data-tone="info"] { border-color: var(--info); color: var(--info); }
+    .pill[data-tone="warn"] { border-color: var(--warn); color: var(--warn); }
+    .pill[data-tone="danger"] { border-color: var(--danger); color: var(--danger); }
+
+    button {
+      font: inherit;
+      font-size: 0.84rem;
+      font-weight: 600;
+      border-radius: 0.5rem;
+      border: 1px solid var(--border);
+      background: var(--surface-alt);
+      color: var(--text);
+      padding: 0.4rem 0.72rem;
+      min-block-size: 34px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.35rem;
+    }
+
+    button.btn-primary {
+      background: var(--info);
+      color: var(--info-text);
+      border-color: var(--info);
+    }
+
+    button.btn-accent {
+      background: var(--accent);
+      color: var(--accent-text);
+      border-color: var(--accent);
+    }
+
+    button.btn-danger {
+      background: var(--danger);
+      color: var(--danger-text);
+      border-color: var(--danger);
+    }
+
+    button.btn-compact {
+      min-block-size: 28px;
+      padding: 0.2rem 0.52rem;
+      font-size: 0.74rem;
+    }
+
+    button[aria-disabled="true"] {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    @media (pointer: coarse) {
+      button {
+        min-block-size: 44px;
+      }
+      button.btn-compact {
+        min-block-size: 36px;
+      }
+    }
+
+    @media (hover: hover) {
+      button:not([aria-disabled="true"]):hover {
+        filter: brightness(1.07);
+      }
+    }
+
+    :where(a:any-link, button, input, select, textarea, summary):focus-visible {
+      outline: 3px solid var(--info);
+      outline-offset: 2px;
+    }
+
+    .controls-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
+      gap: 0.6rem;
+      align-items: start;
+    }
+
+    .field {
+      display: grid;
+      gap: 0.22rem;
+      min-inline-size: 0;
+    }
+
+    .field > label {
+      font-size: 0.76rem;
+      font-weight: 700;
+      color: var(--muted);
+    }
+
+    input[type="text"],
+    input[type="number"],
+    select,
+    textarea {
+      font: inherit;
+      font-size: max(1rem, 0.86rem);
+      color: var(--text);
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
+      border-radius: 0.5rem;
+      padding: 0.42rem 0.6rem;
+      inline-size: 100%;
+      min-inline-size: 0;
+    }
+
+    select,
+    input[type="text"],
+    input[type="number"] {
+      min-block-size: 36px;
+    }
+
+    fieldset {
+      border: 1px solid var(--border);
+      border-radius: 0.55rem;
+      padding: 0.45rem 0.65rem 0.55rem;
+      margin: 0;
+      min-inline-size: 0;
+    }
+
+    legend {
+      padding-inline: 0.35rem;
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: var(--muted);
+    }
+
+    .radio-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem 0.85rem;
+      align-items: center;
+    }
+
+    .radio-option,
+    .check-option {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      min-block-size: 30px;
+      font-size: 0.82rem;
+      cursor: pointer;
+    }
+
+    .radio-option input,
+    .check-option input {
+      inline-size: 1.02rem;
+      block-size: 1.02rem;
+      margin: 0;
+      cursor: pointer;
+    }
+
+    .flex-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .flex-between {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.55rem;
+    }
+
+    .variant-toggles {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+      align-items: center;
+    }
+
+    .variant-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.25rem 0.55rem;
+      border-radius: 0.5rem;
+      border: 1px solid var(--border);
+      background: var(--surface-alt);
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .composer-form {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      gap: 0.5rem;
+      align-items: end;
+    }
+
+    @media (max-width: 720px) {
+      .composer-form {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
+    .growable-textarea {
+      min-inline-size: 0;
+    }
+
+    .growable-textarea > textarea {
+      field-sizing: content;
+      inline-size: 100%;
+      block-size: auto;
+      min-block-size: 2.6lh;
+      max-block-size: 7lh;
+      resize: none;
+    }
+
+    @supports not (field-sizing: content) {
+      .growable-textarea {
+        display: grid;
+      }
+      .growable-textarea::after,
+      .growable-textarea > textarea {
+        grid-area: 1 / 1 / 2 / 2;
+        font: inherit;
+        font-size: max(1rem, 0.86rem);
+        padding: 0.42rem 0.6rem;
+        border: 1px solid var(--border);
+        border-radius: 0.5rem;
+        line-height: 1.45;
+      }
+      .growable-textarea::after {
+        content: attr(data-replicated-value) " ";
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        visibility: hidden;
+        max-block-size: 7lh;
+      }
+      .growable-textarea > textarea {
+        overflow-y: auto;
+      }
+    }
+
+    .progress-bar-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.65rem;
+      padding: 0.45rem 0.65rem;
+      border-radius: 0.5rem;
+      border: 1px solid var(--border);
+      background: var(--surface-alt);
+      font-size: 0.8rem;
+    }
+
+    progress {
+      inline-size: min(260px, 100%);
+      block-size: 0.75rem;
+    }
+
+    .warn-banner {
+      padding: 0.5rem 0.7rem;
+      border-radius: 0.5rem;
+      border: 1px solid var(--warn);
+      background: var(--warn-bg);
+      color: var(--warn);
+      font-size: 0.82rem;
+    }
+
+    .alert-box {
+      padding: 0.55rem 0.75rem;
+      border-radius: 0.5rem;
+      border: 1px solid var(--danger);
+      background: var(--danger-bg);
+      color: var(--danger);
+      font-size: 0.84rem;
+      font-weight: 600;
+    }
+
+    /* Ranking strip */
+    .ranking-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 0.45rem;
+    }
+
+    .rank-card {
+      padding: 0.45rem 0.6rem;
+      border-radius: 0.55rem;
+      border: 1px solid var(--border);
+      background: var(--surface-alt);
+      display: grid;
+      gap: 0.15rem;
+      font-size: 0.78rem;
+    }
+
+    /* Multi-chat arena grid */
+    .arena-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
+      gap: 0.85rem;
+      align-items: start;
+    }
+
+    .variant-column {
+      container-type: inline-size;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+      padding: 0.75rem;
+      display: grid;
+      gap: 0.55rem;
+      min-inline-size: 0;
+    }
+
+    .variant-column[data-busy="true"] {
+      border-color: var(--info);
+    }
+
+    .variant-head {
+      display: grid;
+      gap: 0.28rem;
+    }
+
+    .variant-head h2 {
+      margin: 0;
+      font-size: 0.96rem;
+      font-weight: 700;
+    }
+
+    .overall-rating-box {
+      padding: 0.48rem 0.6rem;
+      border-radius: 0.55rem;
+      border: 1px solid var(--border);
+      background: var(--surface-alt);
+      display: grid;
+      gap: 0.35rem;
+    }
+
+    .rating-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.25rem;
+    }
+
+    .rating-label {
+      font-size: 0.74rem;
+      font-weight: 700;
+      color: var(--muted);
+      margin-inline-end: 0.1rem;
+    }
+
+    button.rating-chip {
+      min-block-size: 26px;
+      min-inline-size: 26px;
+      padding: 0.1rem 0.42rem;
+      font-size: 0.74rem;
+      font-weight: 700;
+      border-radius: 0.38rem;
+    }
+
+    button.rating-chip[aria-pressed="true"] {
+      background: var(--info);
+      color: var(--info-text);
+      border-color: var(--info);
+    }
+
+    button.rating-chip[data-score="0"][aria-pressed="true"],
+    button.rating-chip[data-score="1"][aria-pressed="true"] {
+      background: var(--danger);
+      color: var(--danger-text);
+      border-color: var(--danger);
+    }
+
+    button.rating-chip[data-score="4"][aria-pressed="true"],
+    button.rating-chip[data-score="5"][aria-pressed="true"] {
+      background: var(--accent);
+      color: var(--accent-text);
+      border-color: var(--accent);
+    }
+
+    @media (pointer: coarse) {
+      button.rating-chip {
+        min-block-size: 36px;
+        min-inline-size: 36px;
+      }
+    }
+
+    .metrics-strip {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.3rem;
+      align-items: center;
+      font-size: 0.73rem;
+    }
+
+    .metric-tag {
+      padding: 0.14rem 0.44rem;
+      border-radius: 0.35rem;
+      border: 1px solid var(--border);
+      background: var(--surface-alt);
+      font-weight: 600;
+    }
+
+    .chat-box {
+      block-size: 390px;
+      max-block-size: 52dvb;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      scrollbar-color: var(--scroll-thumb) var(--scroll-track);
+      scrollbar-width: thin;
+      scrollbar-gutter: stable;
+      border: 1px solid var(--border);
+      border-radius: 0.55rem;
+      background: var(--surface-alt);
+      padding: 0.6rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    @supports not (scrollbar-color: auto) {
+      .chat-box::-webkit-scrollbar,
+      .dialog-pre::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+      }
+      .chat-box::-webkit-scrollbar-thumb,
+      .dialog-pre::-webkit-scrollbar-thumb {
+        background: var(--scroll-thumb);
+      }
+      .chat-box::-webkit-scrollbar-track,
+      .dialog-pre::-webkit-scrollbar-track {
+        background: var(--scroll-track);
+      }
+    }
+
+    .empty-msg {
+      margin: auto;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.8rem;
+      padding: 1rem;
+    }
+
+    .msg-bubble {
+      display: grid;
+      gap: 0.24rem;
+      padding: 0.48rem 0.65rem;
+      border-radius: 0.55rem;
+      border: 1px solid var(--border);
+      max-inline-size: 94%;
+    }
+
+    .msg-bubble[data-role="user"] {
+      align-self: flex-end;
+      background: var(--user-bubble);
+    }
+
+    .msg-bubble[data-role="assistant"] {
+      align-self: flex-start;
+      background: var(--bot-bubble);
+    }
+
+    .msg-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 0.5rem;
+      font-size: 0.7rem;
+      font-weight: 700;
+      color: var(--muted);
+    }
+
+    .msg-body {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      font-size: 0.86rem;
+    }
+
+    .turn-feedback {
+      display: grid;
+      gap: 0.28rem;
+      padding-block-start: 0.3rem;
+      margin-block-start: 0.15rem;
+      border-block-start: 1px dashed var(--border);
+    }
+
+    input.compact-note {
+      font-size: 0.76rem;
+      padding: 0.26rem 0.46rem;
+      min-block-size: 28px;
+      background: var(--surface);
+    }
+
+    .solo-form {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 0.35rem;
+      align-items: center;
+    }
+
+    dialog {
+      margin: auto;
+      max-inline-size: min(760px, calc(100vw - 2rem));
+      inline-size: 100%;
+      max-block-size: calc(100dvb - 2rem);
+      padding: 1rem 1.1rem;
+      border-radius: 0.75rem;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+    }
+
+    dialog[open] {
+      display: grid;
+      gap: 0.75rem;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+    }
+
+    dialog.dialog-narrow {
+      max-inline-size: min(480px, calc(100vw - 2rem));
+      grid-template-rows: auto auto auto;
+    }
+
+    dialog:modal {
+      overscroll-behavior: contain;
+    }
+
+    dialog::backdrop {
+      background: rgb(5 10 18 / 0.65);
+      overflow: hidden;
+      overscroll-behavior: contain;
+    }
+
+    .dialog-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+    }
+
+    .dialog-head h2 {
+      margin: 0;
+      font-size: 1rem;
+    }
+
+    .dialog-textarea,
+    .dialog-pre {
+      font-family: ui-monospace, "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
+      font-size: 0.82rem;
+      line-height: 1.45;
+      min-block-size: 280px;
+      max-block-size: 58dvb;
+      overflow: auto;
+      padding: 0.7rem;
+      border-radius: 0.5rem;
+      border: 1px solid var(--border);
+      background: var(--surface-alt);
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      margin: 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <h1>PETeleco — Arena Multi-Chat de System Prompts (Nota 0–5)</h1>
+        <div class="muted">Compare estilos bem diferentes lado a lado, teste os mesmos cenários (NORMAL / DESGRACADO / SERIO), dê nota de 0 a 5 e exporte o feedback pronto.</div>
+      </div>
+      <div class="status-pills">
+        <span class="pill" id="pill-provider">Provedor: ...</span>
+        <span class="pill" id="pill-mode">Modo: ...</span>
+        <span class="pill" id="pill-active-count">0 chats ativos</span>
+      </div>
+    </header>
+
+    <div id="sr-status" class="visually-hidden" aria-live="polite" aria-atomic="true"></div>
+
+    <!-- TOP SHARED CONTROLS & COMPOSER -->
+    <section class="card" aria-labelledby="heading-controls">
+      <div class="flex-between">
+        <h2 style="margin: 0; font-size: 0.96rem;" id="heading-controls">Controles Compartilhados, Bateria &amp; Exportação</h2>
+        <div class="flex-row">
+          <button type="button" id="btn-copy-all-feedback" class="btn-accent">Copiar Feedback (Markdown)</button>
+          <button type="button" id="btn-preview-feedback">Ver Feedback</button>
+          <button type="button" id="btn-export-json">Exportar JSON</button>
+          <button type="button" id="btn-clear-all">Limpar todos os chats</button>
+        </div>
+      </div>
+
+      <div class="controls-grid">
+        <div class="field">
+          <label for="sel-pessoa">Pessoa (<code class="mono">PESSOA_ATUAL</code>)</label>
+          <select id="sel-pessoa" name="pessoa_id"></select>
+        </div>
+
+        <fieldset>
+          <legend>Modo da Persona</legend>
+          <div class="radio-group">
+            <div class="radio-option">
+              <input type="radio" id="modo-normal" name="modo_persona" value="NORMAL" checked>
+              <label for="modo-normal">NORMAL</label>
+            </div>
+            <div class="radio-option">
+              <input type="radio" id="modo-desgracado" name="modo_persona" value="DESGRACADO">
+              <label for="modo-desgracado">DESGRACADO</label>
+            </div>
+            <div class="radio-option">
+              <input type="radio" id="modo-serio" name="modo_persona" value="SERIO">
+              <label for="modo-serio">SERIO</label>
+            </div>
+          </div>
+        </fieldset>
+
+        <div class="field">
+          <label for="sel-identificacao">Canal (<code class="mono">IDENTIFICACAO</code>)</label>
+          <select id="sel-identificacao" name="identificacao">
+            <option value="rosto+voz">rosto+voz</option>
+            <option value="apenas_voz">apenas_voz</option>
+            <option value="apenas_rosto">apenas_rosto</option>
+            <option value="apresentacao_verbal">apresentacao_verbal</option>
+            <option value="desconhecido">desconhecido</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="sel-superficie">Superfície Física</label>
+          <select id="sel-superficie" name="superficie">
+            <option value="chao">chao</option>
+            <option value="bancada">bancada</option>
+            <option value="no_colo">no_colo</option>
+          </select>
+        </div>
+
+        <fieldset>
+          <legend>Provedor</legend>
+          <div class="radio-group">
+            <div class="radio-option">
+              <input type="radio" id="prov-gemini" name="provider" value="gemini" checked>
+              <label for="prov-gemini">Gemini</label>
+            </div>
+            <div class="radio-option">
+              <input type="radio" id="prov-ollama" name="provider" value="ollama">
+              <label for="prov-ollama">Ollama</label>
+            </div>
+          </div>
+        </fieldset>
+
+        <div class="field">
+          <label for="inp-model">Modelo</label>
+          <input type="text" id="inp-model" list="model-options" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false">
+          <datalist id="model-options"></datalist>
+        </div>
+
+        <div class="field">
+          <label for="inp-temp">Temperatura (<code class="mono">0–1.5</code>)</label>
+          <input type="number" id="inp-temp" min="0" max="1.5" step="0.05" value="0.90">
+        </div>
+      </div>
+
+      <div id="provider-warning" class="warn-banner" hidden></div>
+
+      <div class="flex-between">
+        <div class="variant-toggles" id="variant-toggles" role="group" aria-label="Selecionar estilos visíveis na Arena"></div>
+
+        <div class="flex-row">
+          <label for="sel-cenario" class="muted" style="font-weight: 700;">Bateria pronta:</label>
+          <select id="sel-cenario" style="inline-size: auto; max-inline-size: 320px;"></select>
+          <button type="button" id="btn-run-scenario" class="btn-primary">Rodar bateria em todos</button>
+          <button type="button" id="btn-stop-batch" class="btn-danger" hidden>Parar execução</button>
+        </div>
+      </div>
+
+      <div class="progress-bar-row" id="batch-progress-row" hidden>
+        <progress id="batch-progress" max="100" value="0"></progress>
+        <span id="batch-status-text" class="mono">Aguardando...</span>
+      </div>
+
+      <form id="broadcast-form" class="composer-form">
+        <div class="growable-textarea" data-replicated-value="">
+          <label for="broadcast-input" class="visually-hidden">Mensagem para enviar a todos os chats ativos</label>
+          <textarea
+            id="broadcast-input"
+            name="broadcast"
+            placeholder="Mande uma fala para TODOS os chats ativos ao mesmo tempo... (Enter envia, Shift+Enter quebra linha)"
+            enterkeyhint="send"
+          ></textarea>
+        </div>
+        <button type="submit" id="btn-send-all" class="btn-primary">Enviar para TODOS</button>
+        <button type="button" id="btn-continue-preset" class="btn-compact" title="Envia 'amanhã tem prova de eletronica de santisteban' para todos">Teste rápido: Santisteban</button>
+      </form>
+
+      <div id="arena-error" class="alert-box" role="alert" hidden></div>
+
+      <div>
+        <div class="muted" style="font-weight: 700; margin-block-end: 0.3rem;">Placar Atual (ordenado pela sua Nota Geral 0–5 e pela Métrica Anti-Clichê)</div>
+        <div class="ranking-list" id="ranking-list"></div>
+      </div>
+    </section>
+
+    <!-- PARALLEL CHATS GRID -->
+    <main aria-label="Chats paralelos dos System Prompts">
+      <div class="arena-grid" id="arena-grid"></div>
+    </main>
+  </div>
+
+  <!-- Modal: Edit System Prompt of a variant -->
+  <dialog id="dialog-edit-prompt" closedby="any" aria-labelledby="dialog-edit-title">
+    <div class="dialog-head">
+      <h2 id="dialog-edit-title">Editar System Prompt da Variante</h2>
+      <span class="muted mono" id="edit-prompt-stats">0 chars</span>
+    </div>
+    <div class="field">
+      <label for="edit-prompt-textarea">Instruções enviadas ao modelo (não altera o arquivo até você clicar em "Promover para .md")</label>
+      <textarea id="edit-prompt-textarea" class="dialog-textarea" spellcheck="false"></textarea>
+    </div>
+    <div class="flex-row" style="justify-content: flex-end;">
+      <button type="button" id="btn-reset-variant-prompt">Restaurar original</button>
+      <form method="dialog">
+        <button type="submit">Cancelar</button>
+      </form>
+      <button type="button" id="btn-apply-variant-prompt" class="btn-accent" autofocus>Aplicar nesta coluna</button>
+    </div>
+  </dialog>
+
+  <!-- Modal: Preview formatted Markdown feedback -->
+  <dialog id="dialog-feedback-preview" closedby="any" aria-labelledby="dialog-feedback-title">
+    <div class="dialog-head">
+      <h2 id="dialog-feedback-title">Feedback Formatado (Markdown)</h2>
+      <span class="muted" id="feedback-preview-hint">Pronto para copiar e colar</span>
+    </div>
+    <pre class="dialog-pre mono" id="feedback-preview-pre"></pre>
+    <div class="flex-row" style="justify-content: flex-end;">
+      <button type="button" id="btn-copy-from-modal" class="btn-accent">Copiar tudo</button>
+      <form method="dialog">
+        <button type="submit" autofocus>Fechar</button>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- Modal: Confirm promoting variant prompt to prompts/persona_peteleco.md -->
+  <dialog id="dialog-promote" class="dialog-narrow" aria-labelledby="dialog-promote-title">
+    <div class="dialog-head">
+      <h2 id="dialog-promote-title">Promover variante para persona_peteleco.md?</h2>
+    </div>
+    <p id="dialog-promote-desc" style="margin: 0; font-size: 0.88rem;"></p>
+    <form method="dialog" class="flex-row" style="justify-content: flex-end;">
+      <button value="cancel" autofocus>Cancelar</button>
+      <button value="confirm" class="btn-accent">Confirmar promoção</button>
+    </form>
+  </dialog>
+
+  <script>
+    (() => {
+      const state = {
+        variantes: [],
+        cenarios: [],
+        perfis: [],
+        geminiConfigured: false,
+        geminiModels: [],
+        ollamaOnline: false,
+        ollamaModels: [],
+        pacingGeminiMs: 4200,
+        chats: {},
+        busy: false,
+        cancelBatch: false,
+        lastCompositionEndAt: null,
+        editingVariantId: null,
+        promotingVariantId: null,
+      };
+
+      const el = {
+        pillProvider: document.getElementById("pill-provider"),
+        pillMode: document.getElementById("pill-mode"),
+        pillActiveCount: document.getElementById("pill-active-count"),
+        srStatus: document.getElementById("sr-status"),
+        selPessoa: document.getElementById("sel-pessoa"),
+        selIdentificacao: document.getElementById("sel-identificacao"),
+        selSuperficie: document.getElementById("sel-superficie"),
+        inpModel: document.getElementById("inp-model"),
+        modelOptions: document.getElementById("model-options"),
+        inpTemp: document.getElementById("inp-temp"),
+        providerWarning: document.getElementById("provider-warning"),
+        variantToggles: document.getElementById("variant-toggles"),
+        selCenario: document.getElementById("sel-cenario"),
+        btnRunScenario: document.getElementById("btn-run-scenario"),
+        btnStopBatch: document.getElementById("btn-stop-batch"),
+        batchProgressRow: document.getElementById("batch-progress-row"),
+        batchProgress: document.getElementById("batch-progress"),
+        batchStatusText: document.getElementById("batch-status-text"),
+        broadcastForm: document.getElementById("broadcast-form"),
+        broadcastInput: document.getElementById("broadcast-input"),
+        btnSendAll: document.getElementById("btn-send-all"),
+        btnContinuePreset: document.getElementById("btn-continue-preset"),
+        btnCopyAllFeedback: document.getElementById("btn-copy-all-feedback"),
+        btnPreviewFeedback: document.getElementById("btn-preview-feedback"),
+        btnExportJson: document.getElementById("btn-export-json"),
+        btnClearAll: document.getElementById("btn-clear-all"),
+        arenaError: document.getElementById("arena-error"),
+        rankingList: document.getElementById("ranking-list"),
+        arenaGrid: document.getElementById("arena-grid"),
+        dialogEditPrompt: document.getElementById("dialog-edit-prompt"),
+        editPromptTitle: document.getElementById("dialog-edit-title"),
+        editPromptStats: document.getElementById("edit-prompt-stats"),
+        editPromptTextarea: document.getElementById("edit-prompt-textarea"),
+        btnResetVariantPrompt: document.getElementById("btn-reset-variant-prompt"),
+        btnApplyVariantPrompt: document.getElementById("btn-apply-variant-prompt"),
+        dialogFeedbackPreview: document.getElementById("dialog-feedback-preview"),
+        feedbackPreviewPre: document.getElementById("feedback-preview-pre"),
+        btnCopyFromModal: document.getElementById("btn-copy-from-modal"),
+        dialogPromote: document.getElementById("dialog-promote"),
+        dialogPromoteDesc: document.getElementById("dialog-promote-desc"),
+      };
+
+      function announce(msg) {
+        el.srStatus.textContent = "";
+        window.setTimeout(() => {
+          el.srStatus.textContent = msg;
+        }, 40);
+      }
+
+      function showError(msg) {
+        if (!msg) {
+          el.arenaError.hidden = true;
+          el.arenaError.textContent = "";
+          return;
+        }
+        el.arenaError.textContent = msg;
+        el.arenaError.hidden = false;
+      }
+
+      function getCheckedRadio(name, fallback) {
+        const node = document.querySelector(`input[name="${name}"]:checked`);
+        return node ? node.value : fallback;
+      }
+
+      function setCheckedRadio(name, value) {
+        const node = document.querySelector(`input[name="${name}"][value="${value}"]`);
+        if (node) node.checked = true;
+      }
+
+      function sleep(ms) {
+        return new Promise((resolve) => window.setTimeout(resolve, ms));
+      }
+
+      function getSharedConfig() {
+        return {
+          provider: getCheckedRadio("provider", "gemini"),
+          model: el.inpModel.value.trim(),
+          temperature: Number(el.inpTemp.value || 0.9),
+          max_tokens: 240,
+          incluir_contexto: true,
+          contexto: {
+            pessoa_id: el.selPessoa.value || "caio",
+            modo_persona: getCheckedRadio("modo_persona", "NORMAL"),
+            identificacao: el.selIdentificacao.value || "rosto+voz",
+            superficie: el.selSuperficie.value || "chao",
+            movimento: "parado",
+          },
+        };
+      }
+
+      function getActiveVariantIds() {
+        return state.variantes
+          .filter((v) => state.chats[v.id] && state.chats[v.id].active)
+          .map((v) => v.id);
+      }
+
+      function updateModePill() {
+        const pid = el.selPessoa.value || "caio";
+        const perfil = state.perfis.find((p) => p.id === pid) || {};
+        const reqModo = getCheckedRadio("modo_persona", "NORMAL");
+        const formalByRole =
+          perfil.papel === "professor_orientador" ||
+          ["serio", "formal", "respeitoso_formal_objetivo"].includes(
+            (perfil.tom_com_a_pessoa || "").toLowerCase()
+          );
+        const efetivo =
+          reqModo === "SERIO" || formalByRole
+            ? formalByRole && reqModo !== "SERIO"
+              ? "SERIO (trava do perfil)"
+              : "SERIO"
+            : reqModo === "DESGRACADO"
+              ? "DESGRACADO"
+              : "NORMAL";
+        el.pillMode.textContent = `Modo: ${efetivo}`;
+        el.pillMode.dataset.tone = efetivo.startsWith("SERIO")
+          ? "warn"
+          : efetivo === "DESGRACADO"
+            ? "danger"
+            : "info";
+      }
+
+      function syncProviderUI(forceDefaultModel = false) {
+        const provider = getCheckedRadio("provider", "gemini");
+        el.modelOptions.textContent = "";
+        const list = provider === "gemini" ? state.geminiModels : state.ollamaModels;
+        for (const m of list) {
+          const opt = document.createElement("option");
+          opt.value = m;
+          el.modelOptions.appendChild(opt);
+        }
+        if (forceDefaultModel || !el.inpModel.value.trim() || !list.includes(el.inpModel.value.trim())) {
+          if (list.length) el.inpModel.value = list[0];
+        }
+
+        let warn = "";
+        if (provider === "gemini" && !state.geminiConfigured) {
+          warn = "GEMINI_API_KEY não configurada no .env. Preencha no .env ou selecione Ollama.";
+        } else if (provider === "ollama" && !state.ollamaOnline) {
+          warn = "Ollama offline em http://localhost:11434.";
+        } else if (provider === "ollama" && state.ollamaModels.length === 0) {
+          warn = "Ollama online sem modelo de chat (rode `ollama pull gemma3:4b`).";
+        }
+        if (warn) {
+          el.providerWarning.textContent = warn;
+          el.providerWarning.hidden = false;
+        } else {
+          el.providerWarning.hidden = true;
+          el.providerWarning.textContent = "";
+        }
+        el.pillProvider.textContent = `${provider === "gemini" ? "Gemini" : "Ollama"}: ${el.inpModel.value.trim() || "-"}`;
+        el.pillProvider.dataset.tone = warn ? "warn" : "ok";
+      }
+
+      function setBusy(busy, showStop = false) {
+        state.busy = busy;
+        el.btnSendAll.setAttribute("aria-disabled", busy ? "true" : "false");
+        el.btnRunScenario.setAttribute("aria-disabled", busy ? "true" : "false");
+        el.btnStopBatch.hidden = !(busy && showStop);
+        if (!busy) {
+          el.batchProgressRow.hidden = true;
+        }
+      }
+
+      function computeTurnAvg(chat) {
+        const notas = chat.messages
+          .filter((m) => m.role === "assistant" && typeof m.rating === "number")
+          .map((m) => m.rating);
+        if (!notas.length) return null;
+        return notas.reduce((a, b) => a + b, 0) / notas.length;
+      }
+
+      function renderRanking() {
+        el.rankingList.textContent = "";
+        const actives = getActiveVariantIds().map((vid) => {
+          const v = state.variantes.find((x) => x.id === vid);
+          const chat = state.chats[vid];
+          return { v, chat, turnAvg: computeTurnAvg(chat) };
+        });
+        actives.sort((a, b) => {
+          const na = typeof a.chat.overallRating === "number" ? a.chat.overallRating : -1;
+          const nb = typeof b.chat.overallRating === "number" ? b.chat.overallRating : -1;
+          if (nb !== na) return nb - na;
+          const ma = a.chat.metrics ? a.chat.metrics.overall_heuristic : -1;
+          const mb = b.chat.metrics ? b.chat.metrics.overall_heuristic : -1;
+          return mb - ma;
+        });
+
+        for (const item of actives) {
+          const card = document.createElement("div");
+          card.className = "rank-card";
+          const title = document.createElement("strong");
+          title.textContent = item.v.nome;
+          const notaGeralStr =
+            typeof item.chat.overallRating === "number" ? `${item.chat.overallRating}/5` : "-";
+          const turnAvgStr = item.turnAvg !== null ? `${item.turnAvg.toFixed(1)}/5` : "-";
+          const heurStr = item.chat.metrics ? `${item.chat.metrics.overall_heuristic}/100` : "-";
+
+          const line = document.createElement("div");
+          line.className = "mono";
+          line.textContent = `Sua nota: ${notaGeralStr} · Turnos: ${turnAvgStr} · Heurística: ${heurStr}`;
+          card.appendChild(title);
+          card.appendChild(line);
+          el.rankingList.appendChild(card);
+        }
+        el.pillActiveCount.textContent = `${actives.length} ${actives.length === 1 ? "chat ativo" : "chats ativos"}`;
+      }
+
+      function renderVariantToggles() {
+        el.variantToggles.textContent = "";
+        const lbl = document.createElement("span");
+        lbl.className = "muted";
+        lbl.style.fontWeight = "700";
+        lbl.textContent = "Estilos na tela:";
+        el.variantToggles.appendChild(lbl);
+
+        for (const v of state.variantes) {
+          const chat = state.chats[v.id];
+          const label = document.createElement("label");
+          label.className = "variant-chip";
+          const cb = document.createElement("input");
+          cb.type = "checkbox";
+          cb.checked = Boolean(chat && chat.active);
+          cb.addEventListener("change", () => {
+            if (state.chats[v.id]) {
+              state.chats[v.id].active = cb.checked;
+              renderRanking();
+              renderArenaGrid();
+            }
+          });
+          const span = document.createElement("span");
+          span.textContent = v.nome.split(" — ")[0];
+          label.title = v.nome;
+          label.appendChild(cb);
+          label.appendChild(span);
+          el.variantToggles.appendChild(label);
+        }
+      }
+
+      function renderSingleColumnMessages(vid) {
+        const box = document.getElementById(`chat-box-${vid}`);
+        const metricsEl = document.getElementById(`metrics-${vid}`);
+        const chat = state.chats[vid];
+        if (!box || !chat) return;
+
+        if (metricsEl) {
+          metricsEl.textContent = "";
+          if (chat.metrics) {
+            const m = chat.metrics;
+            const tags = [
+              `Heurística: ${m.overall_heuristic}/100`,
+              `Anti-clichê: ${m.anti_cliche_score}`,
+              `Div: ${m.diversity_score}`,
+              `Média: ${m.avg_words} pal.`,
+              `chefe=${m.chefe_count}x`,
+              `sabia_que=${m.sabia_que_count ?? 0}x`,
+              m.formal_safety_ok ? "Formal: OK" : "FALHA FORMAL",
+            ];
+            for (const txt of tags) {
+              const s = document.createElement("span");
+              s.className = "metric-tag mono";
+              s.textContent = txt;
+              metricsEl.appendChild(s);
+            }
+            if (m.penalties && m.penalties.length) {
+              const warn = document.createElement("span");
+              warn.className = "metric-tag mono";
+              warn.style.borderColor = "var(--warn)";
+              warn.style.color = "var(--warn)";
+              warn.textContent = `Alertas (${m.penalties.length}): ${m.penalties.slice(0, 2).join("; ")}`;
+              metricsEl.appendChild(warn);
+            }
+          } else {
+            const s = document.createElement("span");
+            s.className = "muted";
+            s.textContent = "Sem métricas ainda (envie um turno)";
+            metricsEl.appendChild(s);
+          }
+        }
+
+        box.textContent = "";
+        if (chat.messages.length === 0) {
+          const empty = document.createElement("div");
+          empty.className = "empty-msg";
+          empty.textContent = "Aguardando primeira fala ou bateria pronta.";
+          box.appendChild(empty);
+          return;
+        }
+
+        chat.messages.forEach((msg, idx) => {
+          const bubble = document.createElement("article");
+          bubble.className = "msg-bubble";
+          bubble.dataset.role = msg.role;
+
+          const head = document.createElement("div");
+          head.className = "msg-head";
+          const who = document.createElement("span");
+          who.textContent = msg.role === "user" ? "Usuário (Teste)" : "PETeleco";
+          const meta = document.createElement("span");
+          meta.className = "mono";
+          if (msg.role === "assistant" && msg.meta) {
+            const u = msg.meta.usage || {};
+            const tok = u.total_tokens > 0 ? ` · ${u.prompt_tokens || 0}→${u.output_tokens || 0}t` : "";
+            meta.textContent = `${msg.meta.latency_ms ?? "-"} ms${tok} · ${msg.meta.modo_efetivo || "-"}`;
+          } else {
+            meta.textContent = `#${idx + 1}`;
+          }
+          head.appendChild(who);
+          head.appendChild(meta);
+
+          const body = document.createElement("div");
+          body.className = "msg-body";
+          body.textContent = msg.text;
+
+          bubble.appendChild(head);
+          bubble.appendChild(body);
+
+          if (msg.role === "assistant") {
+            const fb = document.createElement("div");
+            fb.className = "turn-feedback";
+
+            const row = document.createElement("div");
+            row.className = "rating-row";
+            const lbl = document.createElement("span");
+            lbl.className = "rating-label";
+            lbl.textContent = "Turno:";
+            row.appendChild(lbl);
+
+            for (let score = 0; score <= 5; score += 1) {
+              const b = document.createElement("button");
+              b.type = "button";
+              b.className = "rating-chip";
+              b.dataset.score = String(score);
+              b.textContent = String(score);
+              b.setAttribute("aria-pressed", msg.rating === score ? "true" : "false");
+              b.addEventListener("click", () => {
+                msg.rating = msg.rating === score ? null : score;
+                row.querySelectorAll("button.rating-chip").forEach((chip) => {
+                  chip.setAttribute(
+                    "aria-pressed",
+                    msg.rating === Number(chip.dataset.score) ? "true" : "false"
+                  );
+                });
+                renderRanking();
+              });
+              row.appendChild(b);
+            }
+
+            const noteId = `note-${vid}-${idx}`;
+            const nLbl = document.createElement("label");
+            nLbl.className = "visually-hidden";
+            nLbl.setAttribute("for", noteId);
+            nLbl.textContent = `Comentário ${vid} turno ${idx + 1}`;
+
+            const note = document.createElement("input");
+            note.type = "text";
+            note.id = noteId;
+            note.className = "compact-note";
+            note.placeholder = "Comentário nesse turno...";
+            note.value = msg.feedback || "";
+            note.addEventListener("input", () => {
+              msg.feedback = note.value;
+            });
+
+            fb.appendChild(row);
+            fb.appendChild(nLbl);
+            fb.appendChild(note);
+            bubble.appendChild(fb);
+          }
+
+          box.appendChild(bubble);
+        });
+
+        box.scrollTop = box.scrollHeight;
+      }
+
+      function renderArenaGrid() {
+        el.arenaGrid.textContent = "";
+        const actives = getActiveVariantIds();
+        for (const vid of actives) {
+          const v = state.variantes.find((x) => x.id === vid);
+          const chat = state.chats[vid];
+
+          const col = document.createElement("section");
+          col.className = "variant-column";
+          col.id = `col-${vid}`;
+          col.setAttribute("aria-label", v.nome);
+
+          // Head
+          const head = document.createElement("div");
+          head.className = "variant-head";
+          const topRow = document.createElement("div");
+          topRow.className = "flex-between";
+          const h2 = document.createElement("h2");
+          h2.textContent = v.nome;
+
+          const headBtns = document.createElement("div");
+          headBtns.className = "flex-row";
+          const btnEdit = document.createElement("button");
+          btnEdit.type = "button";
+          btnEdit.className = "btn-compact";
+          btnEdit.textContent = "Ver/Editar Prompt";
+          btnEdit.addEventListener("click", () => {
+            state.editingVariantId = vid;
+            el.editPromptTitle.textContent = `System Prompt — ${v.nome}`;
+            el.editPromptTextarea.value = chat.prompt;
+            el.editPromptStats.textContent = `${chat.prompt.length} chars · ~${Math.max(1, Math.round(chat.prompt.length / 4))} tok`;
+            el.dialogEditPrompt.showModal();
+          });
+
+          const btnPromote = document.createElement("button");
+          btnPromote.type = "button";
+          btnPromote.className = "btn-compact btn-accent";
+          btnPromote.textContent = "Promover p/ .md";
+          btnPromote.addEventListener("click", () => {
+            state.promotingVariantId = vid;
+            el.dialogPromoteDesc.textContent = `Isso vai salvar o System Prompt de "${v.nome}" dentro de prompts/persona_peteleco.md (preservando o restante do arquivo).`;
+            el.dialogPromote.showModal();
+          });
+
+          headBtns.appendChild(btnEdit);
+          headBtns.appendChild(btnPromote);
+          topRow.appendChild(h2);
+          topRow.appendChild(headBtns);
+
+          const desc = document.createElement("div");
+          desc.className = "muted";
+          desc.textContent = v.resumo;
+          head.appendChild(topRow);
+          head.appendChild(desc);
+
+          // Overall 0-5 Rating Box
+          const overallBox = document.createElement("div");
+          overallBox.className = "overall-rating-box";
+          const overallRow = document.createElement("div");
+          overallRow.className = "rating-row";
+          const oLbl = document.createElement("span");
+          oLbl.className = "rating-label";
+          oLbl.textContent = "Quanto quero isso no PETeleco (0–5):";
+          overallRow.appendChild(oLbl);
+
+          for (let score = 0; score <= 5; score += 1) {
+            const b = document.createElement("button");
+            b.type = "button";
+            b.className = "rating-chip";
+            b.dataset.score = String(score);
+            b.textContent = String(score);
+            b.setAttribute("aria-pressed", chat.overallRating === score ? "true" : "false");
+            b.addEventListener("click", () => {
+              chat.overallRating = chat.overallRating === score ? null : score;
+              overallRow.querySelectorAll("button.rating-chip").forEach((chip) => {
+                chip.setAttribute(
+                  "aria-pressed",
+                  chat.overallRating === Number(chip.dataset.score) ? "true" : "false"
+                );
+              });
+              renderRanking();
+            });
+            overallRow.appendChild(b);
+          }
+
+          const ovNoteId = `ov-note-${vid}`;
+          const ovNoteLbl = document.createElement("label");
+          ovNoteLbl.className = "visually-hidden";
+          ovNoteLbl.setAttribute("for", ovNoteId);
+          ovNoteLbl.textContent = `Feedback geral sobre ${v.nome}`;
+
+          const ovNote = document.createElement("input");
+          ovNote.type = "text";
+          ovNote.id = ovNoteId;
+          ovNote.className = "compact-note";
+          ovNote.placeholder = "O que gostou ou odiou nesse estilo?";
+          ovNote.value = chat.overallFeedback || "";
+          ovNote.addEventListener("input", () => {
+            chat.overallFeedback = ovNote.value;
+          });
+
+          overallBox.appendChild(overallRow);
+          overallBox.appendChild(ovNoteLbl);
+          overallBox.appendChild(ovNote);
+
+          // Metrics Strip
+          const metricsDiv = document.createElement("div");
+          metricsDiv.className = "metrics-strip";
+          metricsDiv.id = `metrics-${vid}`;
+
+          // Chat box
+          const chatBox = document.createElement("div");
+          chatBox.className = "chat-box";
+          chatBox.id = `chat-box-${vid}`;
+          chatBox.tabIndex = 0;
+          chatBox.setAttribute("aria-label", `Histórico ${v.nome}`);
+
+          // Mini follow-up solo form & clear button
+          const soloForm = document.createElement("form");
+          soloForm.className = "solo-form";
+          const soloInpId = `solo-inp-${vid}`;
+          const soloLbl = document.createElement("label");
+          soloLbl.className = "visually-hidden";
+          soloLbl.setAttribute("for", soloInpId);
+          soloLbl.textContent = `Continuar só com ${v.nome}`;
+
+          const soloInp = document.createElement("input");
+          soloInp.type = "text";
+          soloInp.id = soloInpId;
+          soloInp.placeholder = "Testar fala só neste estilo...";
+
+          const soloBtns = document.createElement("div");
+          soloBtns.className = "flex-row";
+          const btnSoloSend = document.createElement("button");
+          btnSoloSend.type = "submit";
+          btnSoloSend.className = "btn-compact";
+          btnSoloSend.textContent = "Só neste";
+          const btnClearOne = document.createElement("button");
+          btnClearOne.type = "button";
+          btnClearOne.className = "btn-compact";
+          btnClearOne.textContent = "Limpar";
+          btnClearOne.addEventListener("click", () => {
+            if (state.busy) return;
+            chat.messages = [];
+            chat.metrics = null;
+            renderSingleColumnMessages(vid);
+            renderRanking();
+          });
+
+          soloBtns.appendChild(btnSoloSend);
+          soloBtns.appendChild(btnClearOne);
+          soloForm.appendChild(soloLbl);
+          soloForm.appendChild(soloInp);
+          soloForm.appendChild(soloBtns);
+          soloForm.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            if (state.busy) return;
+            const txt = soloInp.value.trim();
+            if (!txt) return;
+            soloInp.value = "";
+            setBusy(true, false);
+            await sendToVariant(vid, txt);
+            setBusy(false);
+            soloInp.focus();
+          });
+
+          col.appendChild(head);
+          col.appendChild(overallBox);
+          col.appendChild(metricsDiv);
+          col.appendChild(chatBox);
+          col.appendChild(soloForm);
+          el.arenaGrid.appendChild(col);
+
+          renderSingleColumnMessages(vid);
+        }
+      }
+
+      async function sendToVariant(vid, userText, overrideContext = null) {
+        const chat = state.chats[vid];
+        if (!chat) return true;
+        const col = document.getElementById(`col-${vid}`);
+        if (col) col.dataset.busy = "true";
+
+        chat.messages.push({ role: "user", text: userText });
+        renderSingleColumnMessages(vid);
+
+        const cfg = getSharedConfig();
+        if (overrideContext) {
+          cfg.contexto = { ...cfg.contexto, ...overrideContext };
+        }
+
+        try {
+          const resp = await fetch("/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ...cfg,
+              prompt_base: chat.prompt,
+              messages: chat.messages.map((m) => ({ role: m.role, text: m.text })),
+            }),
+          });
+          const data = await resp.json();
+          if (!resp.ok || !data.ok) {
+            chat.messages.push({
+              role: "assistant",
+              text: `[ERRO] ${data.error || "Falha na chamada"}`,
+              meta: { latency_ms: 0, modo_efetivo: "ERR" },
+            });
+            showError(`${vid}: ${data.error || "Falha na chamada"}`);
+            renderSingleColumnMessages(vid);
+            return false;
+          }
+          chat.messages.push({
+            role: "assistant",
+            text: data.reply,
+            meta: {
+              provider: data.provider,
+              model: data.model,
+              latency_ms: data.latency_ms,
+              usage: data.usage,
+              modo_efetivo: data.modo_efetivo,
+            },
+            rating: null,
+            feedback: "",
+          });
+          if (data.metricas) {
+            chat.metrics = data.metricas;
+          }
+          renderSingleColumnMessages(vid);
+          renderRanking();
+          return true;
+        } catch (err) {
+          showError(`Erro de rede em ${vid}: ${err}`);
+          return false;
+        } finally {
+          if (col) col.dataset.busy = "false";
+        }
+      }
+
+      async function runBatchAcrossActiveVariants(turnsList, overrideContext = null, clearFirst = false) {
+        const actives = getActiveVariantIds();
+        if (!actives.length) {
+          showError("Selecione pelo menos uma variante ativa na Arena.");
+          return;
+        }
+        showError("");
+        state.cancelBatch = false;
+        setBusy(true, true);
+
+        if (clearFirst) {
+          for (const vid of actives) {
+            state.chats[vid].messages = [];
+            state.chats[vid].metrics = null;
+            renderSingleColumnMessages(vid);
+          }
+          renderRanking();
+        }
+
+        const totalSteps = turnsList.length * actives.length;
+        let doneSteps = 0;
+        const cfg = getSharedConfig();
+        const isGemini = cfg.provider === "gemini";
+        el.batchProgressRow.hidden = false;
+        el.batchProgress.max = Math.max(1, totalSteps);
+        el.batchProgress.value = 0;
+
+        for (let tIdx = 0; tIdx < turnsList.length; tIdx += 1) {
+          const userTxt = turnsList[tIdx];
+          for (let vIdx = 0; vIdx < actives.length; vIdx += 1) {
+            if (state.cancelBatch) break;
+            const vid = actives[vIdx];
+            const vObj = state.variantes.find((x) => x.id === vid);
+            if (doneSteps > 0 && isGemini && state.pacingGeminiMs > 0) {
+              el.batchStatusText.textContent = `Respeitando cota Gemini 15 RPM (${(state.pacingGeminiMs / 1000).toFixed(1)}s)... (${doneSteps}/${totalSteps})`;
+              await sleep(state.pacingGeminiMs);
+            }
+            if (state.cancelBatch) break;
+            el.batchStatusText.textContent = `Turno ${tIdx + 1}/${turnsList.length} → ${vObj ? vObj.nome : vid} (${doneSteps + 1}/${totalSteps})`;
+            await sendToVariant(vid, userTxt, overrideContext);
+            doneSteps += 1;
+            el.batchProgress.value = doneSteps;
+          }
+          if (state.cancelBatch) break;
+        }
+
+        el.batchStatusText.textContent = state.cancelBatch
+          ? "Execução interrompida pelo usuário."
+          : `Concluído (${doneSteps}/${totalSteps} respostas geradas).`;
+        setBusy(false, false);
+        announce("Execução da Arena concluída.");
+      }
+
+      function buildFeedbackMarkdown() {
+        const cfg = getSharedConfig();
+        const actives = getActiveVariantIds();
+        const lines = [
+          `# Feedback Arena PETeleco`,
+          `- Modelo: \`${cfg.model || "-"}\` (${cfg.provider}) | Temp: ${cfg.temperature}`,
+          `- Contexto padrão: pessoa=\`${cfg.contexto.pessoa_id}\`, modo=\`${cfg.contexto.modo_persona}\`, canal=\`${cfg.contexto.identificacao}\`, superfície=\`${cfg.contexto.superficie}\``,
+          "",
+          `## Ranking & Notas (0 a 5)`,
+        ];
+
+        for (const vid of actives) {
+          const v = state.variantes.find((x) => x.id === vid);
+          const chat = state.chats[vid];
+          const ov = typeof chat.overallRating === "number" ? `${chat.overallRating}/5` : "sem nota";
+          const avg = computeTurnAvg(chat);
+          const avgStr = avg !== null ? `${avg.toFixed(1)}/5` : "-";
+          const m = chat.metrics;
+          const mStr = m
+            ? `heurística=${m.overall_heuristic}/100, anti_clichê=${m.anti_cliche_score}, div=${m.diversity_score}, média=${m.avg_words} pal`
+            : "sem métricas";
+          const obs = (chat.overallFeedback || "").trim();
+          lines.push(`- **${v.nome}** → **Nota Geral: ${ov}** (média turnos: ${avgStr} | ${mStr})${obs ? ` | Obs: ${obs}` : ""}`);
+        }
+
+        lines.push("", "## Conversas & Notas por Turno");
+        for (const vid of actives) {
+          const v = state.variantes.find((x) => x.id === vid);
+          const chat = state.chats[vid];
+          if (!chat.messages.length) continue;
+          const ov = typeof chat.overallRating === "number" ? `${chat.overallRating}/5` : "sem nota";
+          lines.push("", `### ${v.nome} [Nota Geral: ${ov}]`);
+          if ((chat.overallFeedback || "").trim()) {
+            lines.push(`> Comentário geral: ${chat.overallFeedback.trim()}`);
+          }
+          chat.messages.forEach((msg, idx) => {
+            if (msg.role === "user") {
+              lines.push(`Usuário (Teste) [Turno #${idx + 1}]`);
+              lines.push(msg.text);
+            } else {
+              const m = msg.meta || {};
+              const u = m.usage || {};
+              const tok = u.total_tokens > 0 ? ` · ${u.prompt_tokens || 0}→${u.output_tokens || 0} tok` : "";
+              lines.push(`PETeleco (${v.id}) [${m.model || "-"} · ${m.latency_ms ?? "-"} ms${tok} · modo=${m.modo_efetivo || "-"}]`);
+              lines.push(msg.text);
+              const fbParts = [];
+              if (typeof msg.rating === "number") fbParts.push(`Nota: ${msg.rating}/5`);
+              if ((msg.feedback || "").trim()) fbParts.push(`Obs: ${msg.feedback.trim()}`);
+              if (fbParts.length) lines.push(`> ${fbParts.join(" | ")}`);
+            }
+          });
+        }
+        return lines.join("\n").trim();
+      }
+
+      function syncGrowableFallback() {
+        if (!CSS.supports("field-sizing", "content")) {
+          const wrapper = el.broadcastInput.closest(".growable-textarea");
+          if (wrapper) wrapper.dataset.replicatedValue = el.broadcastInput.value;
+        }
+      }
+
+      // Light-dismiss polyfill only where native closedBy is absent
+      if (!("closedBy" in HTMLDialogElement.prototype)) {
+        const outside = (e, dialog) => {
+          const r = dialog.getBoundingClientRect();
+          return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+        };
+        for (const dialog of document.querySelectorAll('dialog[closedby="any"]')) {
+          let pressedOutside = false;
+          dialog.addEventListener("pointerdown", (e) => {
+            pressedOutside = outside(e, dialog);
+          });
+          dialog.addEventListener("pointerup", (e) => {
+            if (pressedOutside && outside(e, dialog)) dialog.close();
+          });
+        }
+      }
+
+      // Events
+      el.selPessoa.addEventListener("change", updateModePill);
+      document.querySelectorAll('input[name="modo_persona"]').forEach((r) => {
+        r.addEventListener("change", updateModePill);
+      });
+      document.querySelectorAll('input[name="provider"]').forEach((r) => {
+        r.addEventListener("change", () => syncProviderUI(true));
+      });
+      el.inpModel.addEventListener("input", () => syncProviderUI(false));
+
+      el.broadcastInput.addEventListener("input", syncGrowableFallback);
+      el.broadcastInput.addEventListener("compositionend", (event) => {
+        state.lastCompositionEndAt = event.timeStamp;
+      });
+      el.broadcastInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" && !event.shiftKey) {
+          event.preventDefault();
+          if (event.isComposing || event.keyCode === 229) return;
+          if (
+            state.lastCompositionEndAt !== null &&
+            Math.abs(event.timeStamp - state.lastCompositionEndAt) < 50
+          ) {
+            return;
+          }
+          el.broadcastForm.requestSubmit();
+        }
+      });
+
+      el.broadcastForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        if (state.busy) return;
+        const txt = el.broadcastInput.value.trim();
+        if (!txt) return;
+        el.broadcastInput.value = "";
+        syncGrowableFallback();
+        await runBatchAcrossActiveVariants([txt], null, false);
+        el.broadcastInput.focus();
+      });
+
+      el.btnContinuePreset.addEventListener("click", async () => {
+        if (state.busy) return;
+        await runBatchAcrossActiveVariants(["amanhã tem prova de eletronica de santisteban"], null, false);
+      });
+
+      el.btnRunScenario.addEventListener("click", async () => {
+        if (state.busy) return;
+        const cenId = el.selCenario.value;
+        const cen = state.cenarios.find((c) => c.id === cenId);
+        if (!cen) return;
+        el.selPessoa.value = cen.pessoa_id;
+        setCheckedRadio("modo_persona", cen.modo_persona);
+        el.selIdentificacao.value = cen.identificacao;
+        el.selSuperficie.value = cen.superficie;
+        updateModePill();
+        await runBatchAcrossActiveVariants(
+          cen.turnos,
+          {
+            pessoa_id: cen.pessoa_id,
+            modo_persona: cen.modo_persona,
+            identificacao: cen.identificacao,
+            superficie: cen.superficie,
+          },
+          true
+        );
+      });
+
+      el.btnStopBatch.addEventListener("click", () => {
+        state.cancelBatch = true;
+      });
+
+      el.btnClearAll.addEventListener("click", () => {
+        if (state.busy) return;
+        for (const vid of Object.keys(state.chats)) {
+          state.chats[vid].messages = [];
+          state.chats[vid].metrics = null;
+        }
+        renderArenaGrid();
+        renderRanking();
+        showError("");
+        announce("Todos os chats foram limpos.");
+      });
+
+      el.btnCopyAllFeedback.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(buildFeedbackMarkdown());
+          el.btnCopyAllFeedback.textContent = "Feedback copiado!";
+          announce("Feedback completo da Arena copiado.");
+          window.setTimeout(() => {
+            el.btnCopyAllFeedback.textContent = "Copiar Feedback (Markdown)";
+          }, 1600);
+        } catch (_) {
+          el.feedbackPreviewPre.textContent = buildFeedbackMarkdown();
+          el.dialogFeedbackPreview.showModal();
+        }
+      });
+
+      el.btnPreviewFeedback.addEventListener("click", () => {
+        el.feedbackPreviewPre.textContent = buildFeedbackMarkdown();
+        el.dialogFeedbackPreview.showModal();
+      });
+
+      el.btnCopyFromModal.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(el.feedbackPreviewPre.textContent || "");
+          el.btnCopyFromModal.textContent = "Copiado!";
+          window.setTimeout(() => {
+            el.btnCopyFromModal.textContent = "Copiar tudo";
+          }, 1300);
+        } catch (_) {}
+      });
+
+      el.btnExportJson.addEventListener("click", () => {
+        const payload = {
+          exported_at: new Date().toISOString(),
+          config: getSharedConfig(),
+          variantes: state.variantes.map((v) => ({
+            id: v.id,
+            nome: v.nome,
+            chat: state.chats[v.id],
+          })),
+        };
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `peteleco-arena-${Date.now()}.json`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      });
+
+      el.editPromptTextarea.addEventListener("input", () => {
+        const txt = el.editPromptTextarea.value;
+        el.editPromptStats.textContent = `${txt.length} chars · ~${Math.max(1, Math.round(txt.length / 4))} tok`;
+      });
+
+      el.btnResetVariantPrompt.addEventListener("click", () => {
+        const v = state.variantes.find((x) => x.id === state.editingVariantId);
+        if (v) {
+          el.editPromptTextarea.value = v.prompt;
+          el.editPromptTextarea.dispatchEvent(new Event("input"));
+        }
+      });
+
+      el.btnApplyVariantPrompt.addEventListener("click", () => {
+        if (state.editingVariantId && state.chats[state.editingVariantId]) {
+          state.chats[state.editingVariantId].prompt = el.editPromptTextarea.value;
+        }
+        el.dialogEditPrompt.close();
+      });
+
+      el.dialogPromote.addEventListener("close", async () => {
+        const val = el.dialogPromote.returnValue;
+        el.dialogPromote.returnValue = "";
+        if (val !== "confirm" || !state.promotingVariantId) return;
+        const chat = state.chats[state.promotingVariantId];
+        if (!chat) return;
+        const resp = await fetch("/api/promote", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt_base: chat.prompt }),
+        });
+        const data = await resp.json();
+        if (!resp.ok || !data.ok) {
+          showError(data.error || "Erro ao salvar em persona_peteleco.md");
+          return;
+        }
+        const mdVar = state.variantes.find((x) => x.id === "atual_md");
+        if (mdVar) {
+          mdVar.prompt = data.prompt_base;
+          if (state.chats.atual_md) state.chats.atual_md.prompt = data.prompt_base;
+        }
+        announce("System Prompt promovido e salvo em prompts/persona_peteleco.md!");
+      });
+
+      async function init() {
+        const resp = await fetch("/api/state");
+        const data = await resp.json();
+
+        state.variantes = data.variantes || [];
+        state.cenarios = data.cenarios || [];
+        state.perfis = data.perfis || [];
+        state.geminiConfigured = Boolean(data.gemini_configured);
+        state.geminiModels = data.gemini_models || [];
+        state.ollamaOnline = Boolean(data.ollama_online);
+        state.ollamaModels = data.ollama_models || [];
+        state.pacingGeminiMs = Number(data.pacing_gemini_ms || 4200);
+
+        el.selPessoa.textContent = "";
+        for (const p of state.perfis) {
+          const opt = document.createElement("option");
+          opt.value = p.id;
+          opt.textContent = `${p.nome} (${p.id})`;
+          el.selPessoa.appendChild(opt);
+        }
+        if (state.perfis.some((p) => p.id === "caio")) {
+          el.selPessoa.value = "caio";
+        }
+
+        el.selCenario.textContent = "";
+        for (const c of state.cenarios) {
+          const opt = document.createElement("option");
+          opt.value = c.id;
+          opt.textContent = c.titulo;
+          el.selCenario.appendChild(opt);
+        }
+
+        for (const v of state.variantes) {
+          state.chats[v.id] = {
+            active: v.id !== "atual_md",
+            prompt: v.prompt,
+            messages: [],
+            overallRating: null,
+            overallFeedback: "",
+            metrics: null,
+          };
+        }
+
+        if (!state.geminiConfigured && state.ollamaOnline && state.ollamaModels.length) {
+          setCheckedRadio("provider", "ollama");
+        }
+        syncProviderUI(true);
+        updateModePill();
+        renderVariantToggles();
+        renderRanking();
+        renderArenaGrid();
+      }
+
+      init().catch((err) => {
+        showError(`Falha ao carregar Arena: ${err}`);
+      });
+    })();
+  </script>
+</body>
+</html>

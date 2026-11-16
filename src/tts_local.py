@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Camada 3 — Sintese de Voz Offline Multiplataforma (Piper TTS + Fallbacks).
+Camada 3 — Sintese de Voz Multi-Backend PT-BR (Edge Neural + Gemini TTS + Piper Offline).
 
-Prioriza o `piper-tts` na CPU com voz PT-BR (`pt_BR-faber-medium` por padrao),
-reproduzindo diretamente via `sounddevice` (ou `paplay`/`pw-play`/`aplay` no Linux).
-Mantem fallback automatico para Windows SAPI (`System.Speech`) no Windows e
-`espeak-ng` / `spd-say` no Linux caso o Piper nao esteja disponivel offline.
+Ordem no modo `auto` (padrao):
+1. `edge-tts` (`pt-BR-AntonioNeural` neural em portugues brasileiro, ~1.2s, decodificado
+   em memoria com PyAV sem depender de `ffmpeg` externo) para fala natural com ritmo e prosodia.
+2. Fallback offline automatico para `piper-tts` (`pt_BR-faber-medium`, `length_scale=1.14`
+   para cadencia mais calma e legivel), Windows SAPI ou `espeak-ng` caso esteja sem internet.
+Modo `gemini` opcional usa `gemini-2.5-flash-preview-tts` para entonacao generativa.
 """
 
+import asyncio
+import base64
+import concurrent.futures
 import io
 import os
 from pathlib import Path
@@ -27,6 +32,25 @@ from src.memoria_pessoas import ROOT_DIR, carregar_env
 
 DEFAULT_PIPER_DIR = ROOT_DIR / "models" / "piper"
 DEFAULT_PIPER_VOICE = "pt_BR-faber-medium"
+DEFAULT_EDGE_VOICE = "pt-BR-AntonioNeural"
+DEFAULT_EDGE_RATE = "+4%"
+DEFAULT_GEMINI_TTS_VOICE = "Puck"
+
+try:
+    import edge_tts  # type: ignore
+
+    _HAS_EDGE_TTS = True
+except Exception:
+    edge_tts = None
+    _HAS_EDGE_TTS = False
+
+try:
+    import av  # type: ignore
+
+    _HAS_PYAV = True
+except Exception:
+    av = None
+    _HAS_PYAV = False
 
 try:
     from piper import PiperVoice  # type: ignore
@@ -64,28 +88,71 @@ def _urls_voz_piper(voice_name: str) -> Optional[Tuple[str, str]]:
 
 
 class SintetizadorTTS:
-    """Sintetizador TTS offline reutilizavel em Linux e Windows (0 MB de VRAM)."""
+    """Sintetizador TTS multi-backend (Edge Neural -> Piper Offline -> SO)."""
 
     def __init__(
         self,
         voice_name: Optional[str] = None,
         models_dir: Optional[Path] = None,
-        length_scale: float = 0.95,
+        length_scale: float = 1.14,
         auto_download: bool = True,
+        tts_modo: Optional[str] = None,
+        edge_voice: Optional[str] = None,
+        edge_rate: Optional[str] = None,
+        gemini_voice: Optional[str] = None,
     ) -> None:
-        env = carregar_env()
-        self.voice_name = (voice_name or env.get("PIPER_VOICE") or DEFAULT_PIPER_VOICE).strip()
+        self._env = carregar_env()
+        self.voice_name = (voice_name or self._env.get("PIPER_VOICE") or DEFAULT_PIPER_VOICE).strip()
         self.models_dir = Path(models_dir or DEFAULT_PIPER_DIR)
         self.length_scale = float(length_scale)
         self.auto_download = auto_download
+        modo_raw = (tts_modo or self._env.get("PETELECO_TTS_MODE") or "auto").strip().lower()
+        self.tts_modo = modo_raw if modo_raw in ("auto", "edge", "gemini", "piper") else "auto"
+        self.edge_voice = (edge_voice or self._env.get("PETELECO_EDGE_VOICE") or DEFAULT_EDGE_VOICE).strip()
+        self.edge_rate = (edge_rate or self._env.get("PETELECO_EDGE_RATE") or DEFAULT_EDGE_RATE).strip()
+        self.gemini_voice = (gemini_voice or self._env.get("PETELECO_GEMINI_TTS_VOICE") or DEFAULT_GEMINI_TTS_VOICE).strip()
         self._voice: Any = None
         self._piper_tentado: bool = False
         self._piper_falhou: bool = False
         self._session = requests.Session()
         self.ultimo_backend: str = self.descrever_backend()
 
+    def configurar(
+        self,
+        *,
+        tts_modo: Optional[str] = None,
+        edge_voice: Optional[str] = None,
+        edge_rate: Optional[str] = None,
+        gemini_voice: Optional[str] = None,
+        length_scale: Optional[float] = None,
+    ) -> None:
+        """Atualiza configuracao de TTS em tempo real (UI/CLI)."""
+        if tts_modo and tts_modo in ("auto", "edge", "gemini", "piper"):
+            self.tts_modo = tts_modo
+        if edge_voice:
+            self.edge_voice = edge_voice.strip()
+        if edge_rate:
+            self.edge_rate = edge_rate.strip()
+        if gemini_voice:
+            self.gemini_voice = gemini_voice.strip()
+        if length_scale is not None:
+            self.length_scale = max(0.75, min(1.5, float(length_scale)))
+        self.ultimo_backend = self.descrever_backend()
+
+    def _edge_disponivel(self) -> bool:
+        return bool(_HAS_EDGE_TTS and _HAS_PYAV)
+
+    def _gemini_disponivel(self) -> bool:
+        return bool(self._env.get("GEMINI_API_KEY", "").strip())
+
     def descrever_backend(self) -> str:
-        """Retorna descricao amigavel do backend principal disponivel neste SO."""
+        """Retorna descricao amigavel do backend principal configurado."""
+        if self.tts_modo == "gemini" and self._gemini_disponivel():
+            return f"gemini-tts:{self.gemini_voice}"
+        if self.tts_modo in ("auto", "edge") and self._edge_disponivel():
+            if _HAS_PIPER:
+                return f"edge:{self.edge_voice} (fallback piper)"
+            return f"edge:{self.edge_voice}"
         if _HAS_PIPER:
             onnx = self.models_dir / f"{self.voice_name}.onnx"
             if onnx.exists() or self.auto_download:
@@ -156,8 +223,126 @@ class SintetizadorTTS:
             self._voice = None
             return None
 
-    def sintetizar_numpy(self, texto: str) -> Tuple[Optional[np.ndarray], int]:
-        """Sintetiza `texto` em float32 mono `[-1, 1]` usando Piper TTS."""
+    @staticmethod
+    def _trim_silencio(audio: np.ndarray, sr: int, pad_ini_ms: int = 35, pad_fim_ms: int = 70) -> np.ndarray:
+        """Remove silencio excessivo no inicio/fim preservando ataque natural da voz."""
+        if audio.size == 0:
+            return audio
+        idx = np.where(np.abs(audio) > 0.008)[0]
+        if idx.size == 0:
+            return audio
+        ini = max(0, int(idx[0]) - int(sr * pad_ini_ms / 1000))
+        fim = min(int(audio.size), int(idx[-1]) + int(sr * pad_fim_ms / 1000))
+        return audio[ini:fim].astype(np.float32)
+
+    def sintetizar_edge_numpy(self, texto: str) -> Tuple[Optional[np.ndarray], int]:
+        """Sintetiza `texto` usando Edge Neural TTS PT-BR e decodifica MP3 em memoria com PyAV."""
+        if not self._edge_disponivel():
+            return None, 24000
+        limpo = (texto or "").strip()
+        if not limpo:
+            return None, 24000
+
+        async def _fetch_mp3() -> bytes:
+            comm = edge_tts.Communicate(limpo, self.edge_voice, rate=self.edge_rate)
+            buf = bytearray()
+            async for chunk in comm.stream():
+                if chunk.get("type") == "audio":
+                    buf.extend(chunk["data"])
+            return bytes(buf)
+
+        def _executar_async() -> bytes:
+            return asyncio.run(asyncio.wait_for(_fetch_mp3(), timeout=12.0))
+
+        try:
+            try:
+                asyncio.get_running_loop()
+                # Caso ja exista event loop nesta thread, roda em worker isolado
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                    mp3_bytes = pool.submit(_executar_async).result(timeout=14.0)
+            except RuntimeError:
+                mp3_bytes = _executar_async()
+
+            if len(mp3_bytes) < 256:
+                return None, 24000
+
+            sr_alvo = 24000
+            container = av.open(io.BytesIO(mp3_bytes), format="mp3")
+            resampler = av.AudioResampler(format="flt", layout="mono", rate=sr_alvo)
+            chunks = []
+            for frame in container.decode(audio=0):
+                for rframe in resampler.resample(frame):
+                    chunks.append(rframe.to_ndarray().reshape(-1))
+            if not chunks:
+                return None, sr_alvo
+            audio = np.concatenate(chunks).astype(np.float32)
+            return self._trim_silencio(audio, sr_alvo), sr_alvo
+        except Exception:
+            return None, 24000
+
+    def sintetizar_gemini_numpy(self, texto: str) -> Tuple[Optional[np.ndarray], int]:
+        """Sintetiza `texto` via `gemini-2.5-flash-preview-tts` (audio generativo expressivo)."""
+        api_key = self._env.get("GEMINI_API_KEY", "").strip()
+        if not api_key:
+            return None, 24000
+        limpo = (texto or "").strip()
+        if not limpo:
+            return None, 24000
+        modelo = (self._env.get("GEMINI_TTS_MODEL") or "gemini-2.5-flash-preview-tts").strip()
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent?key={api_key}"
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {
+                            "text": (
+                                "Leia em portugues brasileiro natural de conversa ao vivo, "
+                                "com entonacao expressiva e ritmo fluido: " + limpo
+                            )
+                        }
+                    ]
+                }
+            ],
+            "generationConfig": {
+                "responseModalities": ["AUDIO"],
+                "speechConfig": {
+                    "voiceConfig": {"prebuiltVoiceConfig": {"voiceName": self.gemini_voice}}
+                },
+            },
+        }
+        try:
+            resp = self._session.post(url, json=payload, timeout=18.0)
+            resp.raise_for_status()
+            data = resp.json()
+            partes = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+            for p in partes:
+                inline = p.get("inlineData") or {}
+                b64 = inline.get("data")
+                if not b64:
+                    continue
+                bruto = base64.b64decode(b64)
+                mime = str(inline.get("mimeType", "")).lower()
+                if "wav" in mime:
+                    with wave.open(io.BytesIO(bruto), "rb") as wf:
+                        sr = wf.getframerate()
+                        frames = wf.readframes(wf.getnframes())
+                    audio = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
+                    return self._trim_silencio(audio, sr), sr
+                # PCM L16 24kHz padrao da API Gemini Audio
+                sr = 24000
+                if "rate=" in mime:
+                    try:
+                        sr = int(mime.split("rate=", 1)[1].split(";", 1)[0])
+                    except Exception:
+                        sr = 24000
+                audio = np.frombuffer(bruto, dtype=np.int16).astype(np.float32) / 32768.0
+                return self._trim_silencio(audio, sr), sr
+        except Exception:
+            pass
+        return None, 24000
+
+    def sintetizar_piper_numpy(self, texto: str) -> Tuple[Optional[np.ndarray], int]:
+        """Sintetiza `texto` em float32 mono `[-1, 1]` usando Piper TTS offline."""
         limpo = (texto or "").strip()
         if not limpo:
             return None, 22050
@@ -175,7 +360,19 @@ class SintetizadorTTS:
                 blocos.append(arr)
         if not blocos:
             return None, sr
-        return np.concatenate(blocos).astype(np.float32), sr
+        return self._trim_silencio(np.concatenate(blocos).astype(np.float32), sr), sr
+
+    def sintetizar_numpy(self, texto: str) -> Tuple[Optional[np.ndarray], int]:
+        """Sintetiza usando o backend principal configurado (Edge -> Gemini -> Piper)."""
+        if self.tts_modo == "gemini":
+            aud, sr = self.sintetizar_gemini_numpy(texto)
+            if aud is not None:
+                return aud, sr
+        if self.tts_modo in ("auto", "edge"):
+            aud, sr = self.sintetizar_edge_numpy(texto)
+            if aud is not None:
+                return aud, sr
+        return self.sintetizar_piper_numpy(texto)
 
     @staticmethod
     def _reproduzir_numpy(audio: np.ndarray, sr: int) -> bool:
@@ -253,8 +450,8 @@ class SintetizadorTTS:
     @staticmethod
     def _falar_linux_cli(texto: str) -> str:
         for cmd in (
-            ["espeak-ng", "-v", "pt-br", "-s", "165", texto],
-            ["espeak", "-v", "pt-br", "-s", "165", texto],
+            ["espeak-ng", "-v", "pt-br", "-s", "150", texto],
+            ["espeak", "-v", "pt-br", "-s", "150", texto],
             ["spd-say", "-l", "pt-BR", "-w", texto],
         ):
             if shutil.which(cmd[0]):
@@ -271,10 +468,25 @@ class SintetizadorTTS:
         if not limpo:
             return ""
 
-        audio, sr = self.sintetizar_numpy(limpo)
-        if audio is not None and self._reproduzir_numpy(audio, sr):
-            self.ultimo_backend = f"piper:{self.voice_name}"
-            return self.ultimo_backend
+        if self.tts_modo == "gemini":
+            ordem = [
+                (f"gemini-tts:{self.gemini_voice}", self.sintetizar_gemini_numpy),
+                (f"edge:{self.edge_voice}", self.sintetizar_edge_numpy),
+                (f"piper:{self.voice_name}", self.sintetizar_piper_numpy),
+            ]
+        elif self.tts_modo in ("auto", "edge"):
+            ordem = [
+                (f"edge:{self.edge_voice}", self.sintetizar_edge_numpy),
+                (f"piper:{self.voice_name}", self.sintetizar_piper_numpy),
+            ]
+        else:
+            ordem = [(f"piper:{self.voice_name}", self.sintetizar_piper_numpy)]
+
+        for nome_backend, fn in ordem:
+            audio, sr = fn(limpo)
+            if audio is not None and self._reproduzir_numpy(audio, sr):
+                self.ultimo_backend = nome_backend
+                return self.ultimo_backend
 
         if self._falar_windows_sapi(limpo):
             self.ultimo_backend = "windows_sapi"
@@ -285,4 +497,5 @@ class SintetizadorTTS:
             self.ultimo_backend = cli_used
             return cli_used
 
+        self.ultimo_backend = "indisponivel"
         return ""

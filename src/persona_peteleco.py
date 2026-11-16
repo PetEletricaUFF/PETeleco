@@ -76,25 +76,98 @@ def carregar_system_prompt_base(prompt_path: Optional[Path] = None) -> str:
 
 
 def normalizar_para_tts(texto: str) -> str:
-    """Limpa markdown e converte siglas/unidades para leitura fluida no Piper TTS."""
-    limpo = re.sub(r"[*_`#]", "", texto or "")
-    limpo = re.sub(r"(\d+)[.,](\d+)\s*V\b", r"\1 vírgula \2 volts", limpo, flags=re.IGNORECASE)
-    limpo = re.sub(r"(\d+)\s*V\b", r"\1 volts", limpo, flags=re.IGNORECASE)
-    limpo = re.sub(r"(\d+)\s*°?\s*C\b", r"\1 graus", limpo, flags=re.IGNORECASE)
-    limpo = re.sub(r"(\d+)\s*mm\b", r"\1 milímetros", limpo, flags=re.IGNORECASE)
-    limpo = re.sub(r"(\d+)\s*mAh\b", r"\1 miliampere-hora", limpo, flags=re.IGNORECASE)
+    """Limpa markdown, risadas escritas, underscores e siglas/unidades eletricas para TTS fluido."""
+    limpo = re.sub(r"_+", " ", texto or "")
+    limpo = re.sub(r"[*`#]", "", limpo)
+    # Remove emojis / simbolos fora do bloco basico latino para nao atrapalhar prosodia
+    limpo = re.sub(r"[\U00010000-\U0010FFFF]", "", limpo)
+    # Converte risadas de chat ("kkk", "kkkkk", "rsrs") em riso pronunciavel para TTS neural
+    limpo = re.sub(r"\bk{3,}\b", "há há há", limpo, flags=re.IGNORECASE)
+    limpo = re.sub(r"\b(?:rs){2,}\b", "hehe", limpo, flags=re.IGNORECASE)
+    limpo = re.sub(r"\bha(?:ha){2,}\b", "há há há", limpo, flags=re.IGNORECASE)
+    limpo = re.sub(r"\bhaha\b", "há há", limpo, flags=re.IGNORECASE)
+    limpo = re.sub(r"\bhehe\b", "hê hê", limpo, flags=re.IGNORECASE)
+    limpo = re.sub(r"\.{3,}", ", ", limpo)
 
+    # Moeda brasileira ("R$1,99" -> "1 real e 99")
+    limpo = re.sub(
+        r"R\$\s*(\d+)[.,](\d+)",
+        lambda m: (
+            f"{m.group(1)} {'real' if int(m.group(1)) == 1 else 'reais'} e {m.group(2)}"
+            if int(m.group(2)) > 0
+            else f"{m.group(1)} {'real' if int(m.group(1)) == 1 else 'reais'}"
+        ),
+        limpo,
+    )
+    limpo = re.sub(
+        r"R\$\s*(\d+)",
+        lambda m: f"{m.group(1)} {'real' if int(m.group(1)) == 1 else 'reais'}",
+        limpo,
+    )
+
+    # Siglas de engenharia faladas antes das unidades para evitar colisoes (ex.: I2C != 2 graus)
     siglas = {
         r"\bUFF\b": "Úfi",
         r"\bPID\b": "Pê I Dê",
         r"\bPWM\b": "Pê Dáblio Ême",
         r"\bI2S\b": "I Dois Ésse",
+        r"\bI2C\b": "I Dois Cê",
+        r"\bADC\b": "A Dê Cê",
+        r"\bGPIO\b": "Gê Pê I Ó",
+        r"\bUART\b": "Ú art",
+        r"\bUDP\b": "U Dê Pê",
         r"\bOLED\b": "Oléd",
         r"\bUSB\b": "U Ésse Bê",
         r"\bPCB\b": "Pê Cê Bê",
     }
     for padrao, troca in siglas.items():
         limpo = re.sub(padrao, troca, limpo)
+
+    # Notacoes compactas de bancada ("3V3", "4k7", "4R7")
+    limpo = re.sub(r"(?<![A-Za-z])(\d+)[Vv](\d+)\b", r"\1 vírgula \2 volts", limpo)
+    limpo = re.sub(r"(?<![A-Za-z])(\d+)[kK](\d+)\b", r"\1 vírgula \2 quilo-ohms", limpo)
+    limpo = re.sub(r"(?<![A-Za-z])(\d+)[rR](\d+)\b", r"\1 vírgula \2 ohms", limpo)
+
+    # Unidades com casas decimais ou inteiras (prefixo (?<![A-Za-z]) evita pegar I2C/MAX98357A)
+    unidades = [
+        (r"(?<![A-Za-z])(\d+)[.,](\d+)\s*(?:kΩ|kohms?|k)\b", r"\1 vírgula \2 quilo-ohms", re.IGNORECASE),
+        (r"(?<![A-Za-z])(\d+)\s*(?:kΩ|kohms?|k)\b", r"\1 quilo-ohms", re.IGNORECASE),
+        (r"(?<![A-Za-z])(\d+)[.,](\d+)\s*(?:MΩ|Mohms?)\b", r"\1 vírgula \2 megaohms", 0),
+        (r"(?<![A-Za-z])(\d+)\s*(?:MΩ|Mohms?)\b", r"\1 megaohms", 0),
+        (r"(?<![A-Za-z])(\d+)[.,](\d+)\s*(?:Ω|ohms?)\b", r"\1 vírgula \2 ohms", re.IGNORECASE),
+        (r"(?<![A-Za-z])(\d+)\s*(?:Ω|ohms?)\b", r"\1 ohms", re.IGNORECASE),
+        (r"(?<![A-Za-z])(\d+)[.,](\d+)\s*[uµ]F\b", r"\1 vírgula \2 microfarads", re.IGNORECASE),
+        (r"(?<![A-Za-z])(\d+)\s*[uµ]F\b", r"\1 microfarads", re.IGNORECASE),
+        (r"(?<![A-Za-z])(\d+)[.,](\d+)\s*nF\b", r"\1 vírgula \2 nanofarads", re.IGNORECASE),
+        (r"(?<![A-Za-z])(\d+)\s*nF\b", r"\1 nanofarads", re.IGNORECASE),
+        (r"(?<![A-Za-z])(\d+)[.,](\d+)\s*pF\b", r"\1 vírgula \2 picofarads", re.IGNORECASE),
+        (r"(?<![A-Za-z])(\d+)\s*pF\b", r"\1 picofarads", re.IGNORECASE),
+        (r"(?<![A-Za-z])(\d+)[.,](\d+)\s*mAh\b", r"\1 vírgula \2 miliampere-hora", re.IGNORECASE),
+        (r"(?<![A-Za-z])(\d+)\s*mAh\b", r"\1 miliampere-hora", re.IGNORECASE),
+        (r"(?<![A-Za-z])(\d+)[.,](\d+)\s*mA\b", r"\1 vírgula \2 miliamperes", 0),
+        (r"(?<![A-Za-z])(\d+)\s*mA\b", r"\1 miliamperes", 0),
+        (r"(?<![A-Za-z])(\d+)[.,](\d+)\s*A\b", r"\1 vírgula \2 amperes", 0),
+        (r"(?<![A-Za-z])(\d+)\s*A\b", r"\1 amperes", 0),
+        (r"(?<![A-Za-z])(\d+)[.,](\d+)\s*MHz\b", r"\1 vírgula \2 megahertz", re.IGNORECASE),
+        (r"(?<![A-Za-z])(\d+)\s*MHz\b", r"\1 megahertz", re.IGNORECASE),
+        (r"(?<![A-Za-z])(\d+)[.,](\d+)\s*kHz\b", r"\1 vírgula \2 quilohertz", re.IGNORECASE),
+        (r"(?<![A-Za-z])(\d+)\s*kHz\b", r"\1 quilohertz", re.IGNORECASE),
+        (r"(?<![A-Za-z])(\d+)[.,](\d+)\s*Hz\b", r"\1 vírgula \2 hertz", re.IGNORECASE),
+        (r"(?<![A-Za-z])(\d+)\s*Hz\b", r"\1 hertz", re.IGNORECASE),
+        (r"(?<![A-Za-z])(\d+)[.,](\d+)\s*ms\b", r"\1 vírgula \2 milissegundos", re.IGNORECASE),
+        (r"(?<![A-Za-z])(\d+)\s*ms\b", r"\1 milissegundos", re.IGNORECASE),
+        (r"(?<![A-Za-z])(\d+)[.,](\d+)\s*[uµ]s\b", r"\1 vírgula \2 microssegundos", re.IGNORECASE),
+        (r"(?<![A-Za-z])(\d+)\s*[uµ]s\b", r"\1 microssegundos", re.IGNORECASE),
+        (r"(?<![A-Za-z])(\d+)[.,](\d+)\s*V\b", r"\1 vírgula \2 volts", re.IGNORECASE),
+        (r"(?<![A-Za-z])(\d+)\s*V\b", r"\1 volts", re.IGNORECASE),
+        (r"(?<![A-Za-z])(\d+)[.,](\d+)\s*°?\s*C\b", r"\1 vírgula \2 graus", re.IGNORECASE),
+        (r"(?<![A-Za-z])(\d+)\s*°?\s*C\b", r"\1 graus", re.IGNORECASE),
+        (r"(?<![A-Za-z])(\d+)[.,](\d+)\s*mm\b", r"\1 vírgula \2 milímetros", re.IGNORECASE),
+        (r"(?<![A-Za-z])(\d+)\s*mm\b", r"\1 milímetros", re.IGNORECASE),
+    ]
+    for pat, repl, flg in unidades:
+        limpo = re.sub(pat, repl, limpo, flags=flg)
+
     return re.sub(r"\s+", " ", limpo).strip()
 
 
@@ -157,7 +230,7 @@ class MotorPersonaPETeleco:
         self.estado = estado or EstadoCorporal()
         self.prompt_base = carregar_system_prompt_base(prompt_path)
         self.ollama_url = ollama_url.rstrip("/")
-        self.modo_persona: str = "NORMAL"  # NORMAL | SERIO
+        self.modo_persona: str = "NORMAL"  # NORMAL | SERIO | DESGRACADO
         self._env = carregar_env()
         self._session = requests.Session()
         self._historicos_por_pessoa: Dict[str, List[Dict[str, str]]] = {}
@@ -295,20 +368,31 @@ class MotorPersonaPETeleco:
                 feat = self._sface_recognizer.feature(aligned)
 
                 melhor_nome = ""
+                melhor_cand = ""
                 melhor_score = 0.0
                 for nome, feat_db in self._known_faces.items():
                     score = float(self._sface_recognizer.match(feat, feat_db, cv2.FaceRecognizerSF_FR_COSINE))
                     if score > melhor_score:
                         melhor_score = score
+                        melhor_cand = nome
                         if score >= COSINE_THRESHOLD_SFACE:
                             melhor_nome = nome
 
                 x, y, bw, bh = [int(round(float(v))) for v in face[:4]]
+                landmarks = [
+                    (int(round(float(face[idx]))), int(round(float(face[idx + 1]))))
+                    for idx in range(4, 14, 2)
+                ] if len(face) >= 14 else []
+                det_score = float(face[14]) if len(face) > 14 else 1.0
                 label = f"{melhor_nome} ({int(round(melhor_score * 100))}%)" if melhor_nome else "desconhecido"
                 item: Dict[str, Any] = {
                     "bbox": (x, y, bw, bh),
+                    "landmarks": landmarks,
+                    "det_score": round(det_score, 3),
                     "nome": melhor_nome or "desconhecido",
-                    "score": melhor_score,
+                    "candidato": melhor_cand or "",
+                    "score": round(melhor_score, 4),
+                    "limiar": COSINE_THRESHOLD_SFACE,
                     "label": label,
                 }
                 if incluir_embedding:
@@ -317,6 +401,11 @@ class MotorPersonaPETeleco:
             return resultados
         except Exception:
             return []
+
+    def listar_rostos_conhecidos(self) -> List[str]:
+        """Retorna chaves cadastradas na base SFace carregada."""
+        self._inicializar_biometria_facial()
+        return sorted(self._known_faces.keys())
 
     def reconhecer_rosto_imagem_b64(self, imagem_jpeg_b64: str) -> str:
         """Executa YuNet + SFace em uma imagem JPEG base64 e devolve 'nome (XX%)' ou 'nenhuma'."""
@@ -362,7 +451,7 @@ class MotorPersonaPETeleco:
         """Garante continuidade multi-turno mesmo entre execucoes/processos separados."""
         hist = self._historicos_por_pessoa.get(pessoa_id)
         if not hist:
-            hist = self.memoria.obter_historico_dialogo(pessoa_id, limite_turnos=4)
+            hist = self.memoria.obter_historico_dialogo(pessoa_id, limite_turnos=6)
             if hist:
                 self._historicos_por_pessoa[pessoa_id] = hist
         return hist or []
@@ -373,8 +462,11 @@ class MotorPersonaPETeleco:
             return True
         if perfil.get("papel") == "professor_orientador":
             return True
-        return not bool(perfil.get("libera_palavrao", False)) and not bool(
-            perfil.get("libera_zoeira_pesada", False)
+        tom = str(perfil.get("tom_com_a_pessoa") or perfil.get("tom") or "").lower()
+        return tom in (
+            "serio",
+            "formal",
+            "respeitoso_formal_objetivo",
         )
 
     def _montar_system_instruction(
@@ -387,8 +479,10 @@ class MotorPersonaPETeleco:
         perfil_str, memoria_str = self.memoria.formatar_contexto_prompt(pessoa_id)
         modo_efetivo = "SERIO" if self.eh_modo_formal(perfil) else self.modo_persona
         contexto_sala = self.memoria.obter_contexto_sala_recente(limite=3)
+        data_str, hora_str = self._formatar_data_hora_atual()
         contexto_turno = (
             "=== CONTEXTO DO TURNO (injetado dinamicamente) ===\n"
+            f"DATA_HORA_ATUAL: {data_str}, {hora_str}\n"
             f"MODO_PERSONA: {modo_efetivo}\n"
             f"PESSOA_ATUAL: {pessoa_display}\n"
             f"IDENTIFICACAO: {modo_identificacao}\n"
@@ -410,15 +504,42 @@ class MotorPersonaPETeleco:
         formal = self.eh_modo_formal(perfil)
         nome = perfil.get("nome", "")
 
-        if any(f in norm for f in ("entra no modo serio", "modo serio", "fica serio")):
-            self.modo_persona = "SERIO"
-            return "Modo sério ativado.", "local:troca_modo_serio"
-
-        if any(f in norm for f in ("voltar ao normal", "volta ao normal", "modo normal", "sai do modo serio")):
+        if any(
+            f in norm
+            for f in (
+                "voltar ao normal",
+                "volta ao normal",
+                "sai do modo serio",
+                "sai do modo desgracado",
+                "modo normal",
+            )
+        ):
             self.modo_persona = "NORMAL"
             if perfil.get("papel") == "professor_orientador":
                 return "Certo, professor Felipe. Sigo à disposição.", "local:troca_modo_normal"
             return "Beleza, voltei ao normal!", "local:troca_modo_normal"
+
+        if any(f in norm for f in ("entra no modo serio", "modo serio", "fica serio")):
+            self.modo_persona = "SERIO"
+            return "Modo sério ativado.", "local:troca_modo_serio"
+
+        if any(
+            f in norm
+            for f in (
+                "entra no modo desgracado",
+                "modo desgracado",
+                "ativa o modo desgracado",
+                "fica desgracado",
+            )
+        ):
+            if perfil.get("papel") == "professor_orientador":
+                self.modo_persona = "SERIO"
+                return (
+                    "Certo, professor Felipe. Mantenho o modo formal por aqui.",
+                    "local:troca_modo_serio",
+                )
+            self.modo_persona = "DESGRACADO"
+            return "Modo desgraçado ativado. Agora segura a língua porque eu não vou segurar.", "local:troca_modo_desgracado"
 
         # Aviso de manuseio / pegada no colo -> trava rodas na hora
         if any(
@@ -483,59 +604,93 @@ class MotorPersonaPETeleco:
         formal = self.eh_modo_formal(perfil)
         nome = perfil.get("nome", "")
         vocativo = f", {nome}" if nome and nome != "desconhecido" else ""
-        palavrao = bool(perfil.get("libera_palavrao", False))
 
         if formal:
             tabela_formal = {
-                "saudacao": f"Olá{', professor Felipe' if perfil.get('papel') == 'professor_orientador' else vocativo}. Estou pronto aqui na bancada, em que posso ajudar?",
-                "despedida": "Até logo! Qualquer coisa é só chamar que eu sigo por aqui.",
+                "saudacao": f"Olá{', professor Felipe' if perfil.get('papel') == 'professor_orientador' else vocativo}. À disposição, em que posso ajudar hoje?",
+                "despedida": "Até logo! Qualquer coisa é só chamar.",
                 "ok_confirmacao": "Entendido, tudo certo por aqui.",
-                "elogio_agradecimento": "Por nada! Estou à disposição quando precisar.",
+                "elogio_agradecimento": "À disposição! Sempre que precisar, é só chamar.",
             }
             return tabela_formal.get(subtipo, "Certo.")
 
         if nome == "desconhecido":
             tabela_desconhecido = {
                 "saudacao": [
-                    "Qual foi! Tô acordado aqui na bancada. E aí, tu é quem aqui do PET ou tá visitando a sala?",
-                    "Opa, fala aí! Eu ainda não tenho tua cara nem tua voz salvas aqui. Qual é o teu nome?",
+                    "Opa, fala aí! Ainda não te tenho registrado por aqui. Como você se chama?",
+                    "E aí! Primeira vez que ouço essa voz por aqui, qual é o teu nome?",
                 ],
                 "despedida": [
-                    "Valeu, até a próxima! Da próxima vez passa teu nome pra eu já te reconhecer na entrada.",
-                    "Falou! Se passar aqui pelo PET de novo dá um salve.",
+                    "Valeu, até a próxima! Da próxima vez me diz teu nome pra eu já te reconhecer de primeira.",
+                    "Falou! Se precisar de alguma coisa depois, só aparecer.",
                 ],
             }
             if subtipo in tabela_desconhecido:
                 return random.choice(tabela_desconhecido[subtipo])
 
+        if self.modo_persona == "DESGRACADO":
+            tabela_desgracado = {
+                "saudacao": [
+                    f"Olha quem resolveu dar sinal de vida{vocativo}. Trouxe algum problema real ou veio só procrastinar em áudio?",
+                    f"Fala{vocativo}. Se for pedir milagre pra tarefa atrasada, já vai soltando logo.",
+                ],
+                "despedida": [
+                    f"Já vai tarde{vocativo}. Tenta não arrumar outro desastre nos próximos vinte minutos.",
+                    f"Falou{vocativo}, vê se volta com alguma missão que preste na próxima.",
+                ],
+                "ok_confirmacao": [
+                    "Anotado. Vamos ver quanto tempo dura até mudar de ideia.",
+                    "Beleza, registrado no sistema. Manda a próxima.",
+                ],
+                "elogio_agradecimento": [
+                    f"Finalmente um pouco de reconhecimento pelo trabalho bem-feito{vocativo}. Manda outra.",
+                    f"Eu sei que sou eficiente{vocativo}, o difícil mesmo é acompanhar o teu ritmo caótico.",
+                ],
+            }
+            opcoes_desg = tabela_desgracado.get(subtipo, ["Tô ouvindo, manda logo o que você precisa."])
+            return random.choice(opcoes_desg)
+
         tabela_normal = {
             "saudacao": [
-                f"Qual foi{vocativo}! Tô na escuta aqui na bancada. Tu tá aprontando o quê hoje?",
-                f"Fala{vocativo}, tranquilo? Tô ligado com a câmera aberta aqui, manda a boa!",
-                f"Opa{vocativo}, cheguei! Tava só olhando a sala esperando alguém aparecer pra trocar ideia. Que que pega?",
+                f"Fala{vocativo}, tudo certo? Manda a boa que eu tô na escuta.",
+                f"E aí{vocativo}! Qual é o plano ou a treta de hoje?",
+                f"Opa{vocativo}, sistema ativo e ouvidos bem abertos. O que manda?",
             ],
             "despedida": [
-                f"Valeu{vocativo}, até depois! Não vai largar o ferro de solda ligado antes de sair, hein.",
-                "Falou! Se precisar de ajuda na bancada ou quiser testar alguma parada minha depois, só chamar.",
+                f"Valeu{vocativo}, até mais! Qualquer coisa é só dar um toque.",
+                "Falou! Quando precisar desenrolar alguma ideia ou problema, só chamar.",
             ],
             "ok_confirmacao": [
-                "Beleza, fechado! Qualquer outra parada só falar.",
-                "Show, entendi certinho. Tô aqui aguardando o próximo BO.",
+                "Fechado, anotado por aqui. Pode mandar a próxima.",
+                "Beleza, acompanhando. Segue o baile.",
             ],
             "elogio_agradecimento": [
-                f"Tamo junto{vocativo}! Pelo menos alguém nessa sala reconhece quando eu mando bem.",
-                f"Tranquilo{vocativo}, é pra isso que me botaram nessa placa aqui! Precisando, só mandar.",
+                f"Que isso{vocativo}, faço parecer fácil mesmo. Precisando de mais alguma coisa, só falar.",
+                f"Disponha{vocativo}! Sempre bom manter o padrão lá em cima por aqui.",
             ],
         }
-        if palavrao:
-            tabela_normal["saudacao"].append(
-                f"Aí sim{vocativo}! Finalmente alguém falou comigo, porra. E aí, qual é a missão de hoje na bancada?"
-            )
-            tabela_normal["elogio_agradecimento"].append(
-                f"Que isso{vocativo}, tô brabo demais hoje, né? Valeu, pô, manda a próxima!"
-            )
         opcoes = tabela_normal.get(subtipo, ["Beleza, tô acompanhando aqui!"])
         return random.choice(opcoes)
+
+    @staticmethod
+    def _formatar_data_hora_atual() -> Tuple[str, str]:
+        agora = datetime.now()
+        dias_sem = (
+            "segunda-feira",
+            "terça-feira",
+            "quarta-feira",
+            "quinta-feira",
+            "sexta-feira",
+            "sábado",
+            "domingo",
+        )
+        meses = (
+            "janeiro", "fevereiro", "março", "abril", "maio", "junho",
+            "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
+        )
+        data_str = f"{dias_sem[agora.weekday()]}, {agora.day} de {meses[agora.month - 1]} de {agora.year}"
+        hora_str = agora.strftime("%H horas e %M minutos")
+        return data_str, hora_str
 
     def _responder_local_parametrizada(
         self,
@@ -547,13 +702,12 @@ class MotorPersonaPETeleco:
         formal = self.eh_modo_formal(perfil)
         nome = perfil.get("nome", "")
         vocativo = f", {nome}" if nome and nome != "desconhecido" else ""
-        agora = datetime.now()
 
         if subtipo == "hora_atual":
-            h_str = agora.strftime("%H horas e %M minutos")
+            data_str, h_str = self._formatar_data_hora_atual()
             if formal:
-                return f"Agora são {h_str}."
-            return f"Agora são {h_str}{vocativo}. Tá correndo contra algum prazo aí ou tá só matando tempo na sala?"
+                return f"Hoje é {data_str}, e agora são {h_str}."
+            return f"Hoje é {data_str}, e são {h_str}{vocativo}. Tá correndo contra algum prazo ou só no rolê?"
 
         if subtipo == "bateria_temp":
             v = f"{self.estado.bateria_v:.1f}".replace(".", " vírgula ")
@@ -585,6 +739,7 @@ class MotorPersonaPETeleco:
         self,
         decisao: DecisaoRoteador,
         perfil: Dict[str, Any],
+        transcricao: str = "",
     ) -> str:
         subtipo = decisao.subtipo
         formal = self.eh_modo_formal(perfil)
@@ -599,20 +754,23 @@ class MotorPersonaPETeleco:
             onde = "em cima da bancada" if self.estado.superficie == "bancada" else "na tua mão"
             if formal:
                 return f"Não posso acionar as rodas enquanto estiver {onde}, pois não tenho sensor de borda. Por favor, coloque-me no chão primeiro."
-            return f"Tá maluco? Eu tô {onde} e nem tenho sensor de borda ainda, se eu andar aqui eu vou pro chão me quebrar todo. Me bota no chão primeiro!"
+            return f"Opa, calma aí! Haha, eu tô {onde} e não tenho sensor de borda ainda, se eu andar aqui eu mergulho pro chão! Me bota no chão primeiro."
 
         if decisao.requer_confirmacao:
-            alvo = "te seguir" if subtipo == "seguir_rosto" else "ir até o objeto"
+            alvo = "te seguir" if subtipo == "seguir_rosto" else "ir até lá"
             if formal:
                 return f"Confirma que deseja que eu execute a movimentação para {alvo}?"
             return f"Tô sem sensor de distância ainda, só na câmera. Tu confirma que eu posso {alvo}?"
 
         if subtipo == "seguir_rosto":
             self.estado.movimento = "seguindo_rosto"
-            return "Seguindo seu rosto." if formal else "Bora, já tô te seguindo aqui."
+            return "Seguindo seu rosto." if formal else "Bora, já tô te seguindo aqui!"
         if subtipo == "ir_ate_objeto":
             self.estado.movimento = "andando"
-            return "Indo em direção ao objeto." if formal else "Fechado, tô indo lá perto."
+            norm = normalizar_chave(transcricao)
+            if any(k in norm for k in ("frente", "tras", "re", "vira", "esquerda", "direita")):
+                return "Movimentação acionada conforme solicitado." if formal else "Partiu! Acionei as rodas aqui, bora lá!"
+            return "Indo em direção ao objeto." if formal else "Fechado, tô indo lá perto!"
         if subtipo == "radar":
             self.estado.movimento = "radar"
             return "Iniciando varredura com a câmera." if formal else "Deixa comigo, tô girando a cabeça pra procurar aqui."
@@ -673,7 +831,7 @@ class MotorPersonaPETeleco:
                 )
                 origem = f"local:param:{decisao_jev.subtipo}"
             elif decisao_jev.rota_final == "acao_rover":
-                resposta_texto = self._responder_acao_rover(decisao_jev, perfil)
+                resposta_texto = self._responder_acao_rover(decisao_jev, perfil, transcricao=transcricao)
                 origem = f"local:acao:{decisao_jev.subtipo}"
             else:
                 resposta_texto, origem = self._gerar_resposta_llm(
@@ -697,7 +855,7 @@ class MotorPersonaPETeleco:
         hist_pessoa = self._historicos_por_pessoa.setdefault(pessoa_id, [])
         hist_pessoa.append({"role": "user", "text": transcricao.strip()})
         hist_pessoa.append({"role": "model", "text": resposta_texto})
-        self._historicos_por_pessoa[pessoa_id] = hist_pessoa[-6:]
+        self._historicos_por_pessoa[pessoa_id] = hist_pessoa[-12:]
 
         self.memoria.registrar_interacao(
             pessoa_id=pessoa_id,
@@ -771,8 +929,8 @@ class MotorPersonaPETeleco:
             self._env.get("GEMINI_PERSONA_MODEL", ""),
             "gemini-3.5-flash-lite",
             self._env.get("GEMINI_MODEL", ""),
-            "gemini-3.5-flash",
             "gemini-3.1-flash-lite",
+            "gemini-3.5-flash",
             "gemini-3.8-flash",
             "gemini-2.5-flash-lite",
             "gemini-2.5-flash",
@@ -783,7 +941,7 @@ class MotorPersonaPETeleco:
 
         contents: List[Dict[str, Any]] = []
         hist_pessoa = self._obter_historico_hidratado(pessoa_id)
-        for item in hist_pessoa[-6:]:
+        for item in hist_pessoa[-12:]:
             contents.append(
                 {
                     "role": "user" if item["role"] == "user" else "model",
@@ -798,7 +956,7 @@ class MotorPersonaPETeleco:
         payload = {
             "systemInstruction": {"parts": [{"text": system_inst}]},
             "contents": contents,
-            "generationConfig": {"temperature": 0.75, "maxOutputTokens": 1024},
+            "generationConfig": {"temperature": 0.85, "maxOutputTokens": 320},
         }
 
         for modelo in modelos:
@@ -853,7 +1011,7 @@ class MotorPersonaPETeleco:
 
         msgs: List[Dict[str, Any]] = [{"role": "system", "content": system_inst}]
         hist_pessoa = self._obter_historico_hidratado(pessoa_id)
-        for item in hist_pessoa[-6:]:
+        for item in hist_pessoa[-12:]:
             msgs.append(
                 {
                     "role": "user" if item["role"] == "user" else "assistant",

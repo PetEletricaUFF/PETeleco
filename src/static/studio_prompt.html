@@ -1,0 +1,1805 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>PETeleco — Studio de System Prompt (Text-to-Text)</title>
+  <style>
+    :root {
+      --bg-light: #f3f6f9;
+      --surface-light: #ffffff;
+      --surface-alt-light: #e9eff5;
+      --border-light: #c8d4e0;
+      --text-light: #102030;
+      --muted-light: #4b6075;
+      --accent-light: #047857;
+      --accent-text-light: #ffffff;
+      --info-light: #0369a1;
+      --info-text-light: #ffffff;
+      --warn-light: #92400e;
+      --warn-bg-light: #fef3c7;
+      --danger-light: #b91c1c;
+      --danger-bg-light: #fee2e2;
+      --user-bubble-light: #e0f2fe;
+      --bot-bubble-light: #f8fafc;
+      --track-light: #e2e8f0;
+      --thumb-light: #6f8296;
+
+      --bg-dark: #0b1117;
+      --surface-dark: #111923;
+      --surface-alt-dark: #182330;
+      --border-dark: #2a3b4e;
+      --text-dark: #e6eef7;
+      --muted-dark: #93a7bd;
+      --accent-dark: #34d399;
+      --accent-text-dark: #062116;
+      --info-dark: #38bdf8;
+      --info-text-dark: #041926;
+      --warn-dark: #fbbf24;
+      --warn-bg-dark: #322408;
+      --danger-dark: #f87171;
+      --danger-bg-dark: #361317;
+      --user-bubble-dark: #0f2940;
+      --bot-bubble-dark: #151f2b;
+      --track-dark: #141e29;
+      --thumb-dark: #556a80;
+
+      --bg: var(--bg-light);
+      --surface: var(--surface-light);
+      --surface-alt: var(--surface-alt-light);
+      --border: var(--border-light);
+      --text: var(--text-light);
+      --muted: var(--muted-light);
+      --accent: var(--accent-light);
+      --accent-text: var(--accent-text-light);
+      --info: var(--info-light);
+      --info-text: var(--info-text-light);
+      --warn: var(--warn-light);
+      --warn-bg: var(--warn-bg-light);
+      --danger: var(--danger-light);
+      --danger-bg: var(--danger-bg-light);
+      --user-bubble: var(--user-bubble-light);
+      --bot-bubble: var(--bot-bubble-light);
+      --scroll-track: var(--track-light);
+      --scroll-thumb: var(--thumb-light);
+
+      color-scheme: light dark;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: var(--bg-dark);
+        --surface: var(--surface-dark);
+        --surface-alt: var(--surface-alt-dark);
+        --border: var(--border-dark);
+        --text: var(--text-dark);
+        --muted: var(--muted-dark);
+        --accent: var(--accent-dark);
+        --accent-text: var(--accent-text-dark);
+        --info: var(--info-dark);
+        --info-text: var(--info-text-dark);
+        --warn: var(--warn-dark);
+        --warn-bg: var(--warn-bg-dark);
+        --danger: var(--danger-dark);
+        --danger-bg: var(--danger-bg-dark);
+        --user-bubble: var(--user-bubble-dark);
+        --bot-bubble: var(--bot-bubble-dark);
+        --scroll-track: var(--track-dark);
+        --scroll-thumb: var(--thumb-dark);
+      }
+    }
+
+    @supports (color: light-dark(white, black)) {
+      :root {
+        --bg: light-dark(var(--bg-light), var(--bg-dark));
+        --surface: light-dark(var(--surface-light), var(--surface-dark));
+        --surface-alt: light-dark(var(--surface-alt-light), var(--surface-alt-dark));
+        --border: light-dark(var(--border-light), var(--border-dark));
+        --text: light-dark(var(--text-light), var(--text-dark));
+        --muted: light-dark(var(--muted-light), var(--muted-dark));
+        --accent: light-dark(var(--accent-light), var(--accent-dark));
+        --accent-text: light-dark(var(--accent-text-light), var(--accent-text-dark));
+        --info: light-dark(var(--info-light), var(--info-dark));
+        --info-text: light-dark(var(--info-text-light), var(--info-text-dark));
+        --warn: light-dark(var(--warn-light), var(--warn-dark));
+        --warn-bg: light-dark(var(--warn-bg-light), var(--warn-bg-dark));
+        --danger: light-dark(var(--danger-light), var(--danger-dark));
+        --danger-bg: light-dark(var(--danger-bg-light), var(--danger-bg-dark));
+        --user-bubble: light-dark(var(--user-bubble-light), var(--user-bubble-dark));
+        --bot-bubble: light-dark(var(--bot-bubble-light), var(--bot-bubble-dark));
+        --scroll-track: light-dark(var(--track-light), var(--track-dark));
+        --scroll-thumb: light-dark(var(--thumb-light), var(--thumb-dark));
+      }
+    }
+
+    html {
+      accent-color: var(--accent);
+    }
+
+    [hidden] {
+      display: none !important;
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, sans-serif;
+      line-height: 1.45;
+      min-block-size: 100dvb;
+    }
+
+    .visually-hidden:where(:not(:focus-within, :active)) {
+      position: absolute !important;
+      clip-path: inset(50%) !important;
+      overflow: hidden !important;
+      inline-size: 1px !important;
+      block-size: 1px !important;
+      margin: -1px !important;
+      padding: 0 !important;
+      border: 0 !important;
+      white-space: nowrap !important;
+    }
+
+    .app-shell {
+      max-inline-size: 1560px;
+      margin-inline: auto;
+      padding-inline: 1rem;
+      padding-block: 0.75rem 1rem;
+      display: grid;
+      gap: 0.75rem;
+    }
+
+    .topbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      padding: 0.75rem 1rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 1.12rem;
+      font-weight: 700;
+    }
+
+    .subtitle {
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+
+    .status-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+      align-items: center;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      padding: 0.25rem 0.6rem;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--surface-alt);
+      font-size: 0.76rem;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .pill[data-tone="ok"] { border-color: var(--accent); color: var(--accent); }
+    .pill[data-tone="info"] { border-color: var(--info); color: var(--info); }
+    .pill[data-tone="warn"] { border-color: var(--warn); color: var(--warn); }
+    .pill[data-tone="danger"] { border-color: var(--danger); color: var(--danger); }
+
+    .studio-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
+      gap: 0.85rem;
+      align-items: start;
+    }
+
+    @media (max-width: 1020px) {
+      .studio-grid {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
+    .column-stack {
+      display: grid;
+      gap: 0.85rem;
+      min-inline-size: 0;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+      padding: 0.9rem;
+      display: grid;
+      gap: 0.7rem;
+      min-inline-size: 0;
+    }
+
+    .card-header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+
+    .card-title {
+      margin: 0;
+      font-size: 0.96rem;
+      font-weight: 700;
+    }
+
+    .mono {
+      font-family: ui-monospace, "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+
+    button {
+      font: inherit;
+      font-size: 0.82rem;
+      font-weight: 600;
+      min-inline-size: 24px;
+      min-block-size: 36px;
+      padding: 0.35rem 0.75rem;
+      border-radius: 0.45rem;
+      border: 1px solid var(--border);
+      background: var(--surface-alt);
+      color: var(--text);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.35rem;
+    }
+
+    button.btn-primary {
+      background: var(--info);
+      color: var(--info-text);
+      border-color: var(--info);
+    }
+
+    button.btn-accent {
+      background: var(--accent);
+      color: var(--accent-text);
+      border-color: var(--accent);
+    }
+
+    button.btn-compact {
+      min-block-size: 28px;
+      padding: 0.2rem 0.55rem;
+      font-size: 0.75rem;
+    }
+
+    button[aria-disabled="true"] {
+      opacity: 0.55;
+      cursor: progress;
+    }
+
+    :where(a:any-link, button, input, select, textarea, summary):focus-visible {
+      outline: 3px solid var(--info);
+      outline-offset: 2px;
+    }
+
+    @media (pointer: coarse) {
+      button {
+        min-block-size: 44px;
+      }
+      button.btn-compact {
+        min-block-size: 36px;
+      }
+    }
+
+    @media (hover: hover) {
+      button:not([aria-disabled="true"]):hover {
+        filter: brightness(1.07);
+      }
+    }
+
+    .actions-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+      align-items: center;
+    }
+
+    .field {
+      display: grid;
+      gap: 0.25rem;
+      min-inline-size: 0;
+    }
+
+    .field > label {
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--muted);
+    }
+
+    input[type="text"],
+    input[type="number"],
+    select,
+    textarea {
+      font: inherit;
+      font-size: max(1rem, 0.88rem);
+      color: var(--text);
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
+      border-radius: 0.5rem;
+      padding: 0.48rem 0.65rem;
+      inline-size: 100%;
+      min-inline-size: 0;
+    }
+
+    select,
+    input[type="text"],
+    input[type="number"] {
+      min-block-size: 38px;
+    }
+
+    #prompt-editor {
+      font-family: ui-monospace, "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
+      font-size: 0.84rem;
+      line-height: 1.5;
+      min-block-size: 320px;
+      max-block-size: 56dvb;
+      resize: vertical;
+    }
+
+    .scroller,
+    #prompt-editor,
+    .preview-pre {
+      scrollbar-color: var(--scroll-thumb) var(--scroll-track);
+      scrollbar-width: thin;
+      scrollbar-gutter: stable;
+    }
+
+    @supports not (scrollbar-color: auto) {
+      .scroller::-webkit-scrollbar,
+      #prompt-editor::-webkit-scrollbar,
+      .preview-pre::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+      }
+      .scroller::-webkit-scrollbar-thumb,
+      #prompt-editor::-webkit-scrollbar-thumb,
+      .preview-pre::-webkit-scrollbar-thumb {
+        background: var(--scroll-thumb);
+      }
+      .scroller::-webkit-scrollbar-track,
+      #prompt-editor::-webkit-scrollbar-track,
+      .preview-pre::-webkit-scrollbar-track {
+        background: var(--scroll-track);
+      }
+    }
+
+    fieldset {
+      border: 1px solid var(--border);
+      border-radius: 0.55rem;
+      padding: 0.5rem 0.65rem 0.6rem;
+      margin: 0;
+      min-inline-size: 0;
+    }
+
+    legend {
+      padding-inline: 0.35rem;
+      font-size: 0.76rem;
+      font-weight: 700;
+      color: var(--muted);
+    }
+
+    .radio-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.65rem 1rem;
+      align-items: center;
+    }
+
+    .radio-option,
+    .check-option {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      min-block-size: 32px;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+
+    .radio-option input,
+    .check-option input {
+      inline-size: 1.05rem;
+      block-size: 1.05rem;
+      margin: 0;
+      cursor: pointer;
+    }
+
+    .controls-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 0.65rem;
+      align-items: start;
+    }
+
+    .range-row {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    .range-row input[type="range"] {
+      flex: 1 1 auto;
+      min-inline-size: 0;
+    }
+
+    .profile-summary {
+      padding: 0.55rem 0.65rem;
+      border-radius: 0.5rem;
+      border: 1px solid var(--border);
+      background: var(--surface-alt);
+      font-size: 0.8rem;
+      display: grid;
+      gap: 0.3rem;
+    }
+
+    .tag-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+    }
+
+    .mini-tag {
+      font-size: 0.74rem;
+      padding: 0.12rem 0.45rem;
+      border-radius: 0.35rem;
+      border: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    /* Chat column */
+    .chat-card {
+      display: grid;
+      grid-template-rows: auto auto minmax(340px, 1fr) auto auto;
+      block-size: calc(100dvb - 6.8rem);
+      min-block-size: 560px;
+    }
+
+    @media (max-width: 1020px) {
+      .chat-card {
+        block-size: auto;
+        min-block-size: 520px;
+      }
+    }
+
+    .presets-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      align-items: center;
+    }
+
+    .chat-messages {
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      border: 1px solid var(--border);
+      border-radius: 0.6rem;
+      background: var(--surface-alt);
+      padding: 0.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.65rem;
+    }
+
+    .empty-state {
+      margin: auto;
+      max-inline-size: 46ch;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.86rem;
+      padding: 1.5rem 0.75rem;
+    }
+
+    .msg-item {
+      display: grid;
+      gap: 0.28rem;
+      max-inline-size: 88%;
+      padding: 0.6rem 0.8rem;
+      border-radius: 0.65rem;
+      border: 1px solid var(--border);
+    }
+
+    .msg-item[data-role="user"] {
+      align-self: flex-end;
+      background: var(--user-bubble);
+    }
+
+    .msg-item[data-role="assistant"] {
+      align-self: flex-start;
+      background: var(--bot-bubble);
+    }
+
+    .msg-role {
+      font-size: 0.73rem;
+      font-weight: 700;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      gap: 0.75rem;
+      align-items: center;
+    }
+
+    .msg-text {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      font-size: 0.92rem;
+    }
+
+    .msg-footer {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.4rem;
+      margin-block-start: 0.15rem;
+    }
+
+    .msg-meta {
+      font-size: 0.72rem;
+      color: var(--muted);
+    }
+
+    .feedback-box {
+      display: grid;
+      gap: 0.35rem;
+      margin-block-start: 0.2rem;
+      padding-block-start: 0.38rem;
+      border-block-start: 1px dashed var(--border);
+    }
+
+    .rating-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.25rem;
+    }
+
+    .rating-label {
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--muted);
+      margin-inline-end: 0.15rem;
+    }
+
+    button.rating-chip {
+      min-block-size: 26px;
+      min-inline-size: 26px;
+      padding: 0.12rem 0.42rem;
+      font-size: 0.74rem;
+      font-weight: 700;
+      border-radius: 0.4rem;
+    }
+
+    button.rating-chip[aria-pressed="true"] {
+      background: var(--info);
+      color: var(--info-text);
+      border-color: var(--info);
+    }
+
+    button.rating-chip[data-score="0"][aria-pressed="true"],
+    button.rating-chip[data-score="1"][aria-pressed="true"] {
+      background: var(--danger);
+      color: #ffffff;
+      border-color: var(--danger);
+    }
+
+    button.rating-chip[data-score="4"][aria-pressed="true"],
+    button.rating-chip[data-score="5"][aria-pressed="true"] {
+      background: var(--accent);
+      color: var(--accent-text);
+      border-color: var(--accent);
+    }
+
+    input.feedback-note-input {
+      font-size: 0.78rem;
+      padding: 0.3rem 0.5rem;
+      min-block-size: 30px;
+      background: var(--surface);
+    }
+
+    @media (pointer: coarse) {
+      button.rating-chip {
+        min-block-size: 36px;
+        min-inline-size: 36px;
+      }
+    }
+
+    .alert-box {
+      padding: 0.55rem 0.75rem;
+      border-radius: 0.5rem;
+      border: 1px solid var(--danger);
+      background: var(--danger-bg);
+      color: var(--danger);
+      font-size: 0.84rem;
+      font-weight: 600;
+    }
+
+    .warn-banner {
+      padding: 0.5rem 0.7rem;
+      border-radius: 0.5rem;
+      border: 1px solid var(--warn);
+      background: var(--warn-bg);
+      color: var(--warn);
+      font-size: 0.82rem;
+    }
+
+    .composer-form {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 0.55rem;
+      align-items: end;
+    }
+
+    .growable-textarea {
+      min-inline-size: 0;
+    }
+
+    #chat-input {
+      field-sizing: content;
+      inline-size: 100%;
+      block-size: auto;
+      min-block-size: 2.8lh;
+      max-block-size: 8.5lh;
+      resize: none;
+    }
+
+    @supports not (field-sizing: content) {
+      .growable-textarea {
+        display: grid;
+      }
+      .growable-textarea::after,
+      .growable-textarea > textarea {
+        grid-area: 1 / 1 / 2 / 2;
+        font: inherit;
+        font-size: max(1rem, 0.88rem);
+        padding: 0.48rem 0.65rem;
+        border: 1px solid var(--border);
+        border-radius: 0.5rem;
+        line-height: 1.45;
+      }
+      .growable-textarea::after {
+        content: attr(data-replicated-value) " ";
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        visibility: hidden;
+        max-block-size: 8.5lh;
+      }
+      .growable-textarea > textarea {
+        overflow-y: auto;
+      }
+    }
+
+    .composer-hint {
+      grid-column: 1 / -1;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
+    /* Native modal dialogs */
+    dialog {
+      margin: auto;
+      max-inline-size: min(760px, calc(100vw - 2rem));
+      inline-size: 100%;
+      max-block-size: calc(100dvb - 2rem);
+      padding: 1rem 1.1rem;
+      border-radius: 0.75rem;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+    }
+
+    dialog[open] {
+      display: grid;
+      gap: 0.75rem;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+    }
+
+    dialog.dialog-narrow {
+      max-inline-size: min(480px, calc(100vw - 2rem));
+      grid-template-rows: auto auto auto;
+    }
+
+    dialog:modal {
+      overscroll-behavior: contain;
+    }
+
+    dialog::backdrop {
+      background: rgb(5 10 18 / 0.65);
+      overflow: hidden;
+      overscroll-behavior: contain;
+    }
+
+    .dialog-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+    }
+
+    .dialog-head h2 {
+      margin: 0;
+      font-size: 1rem;
+    }
+
+    .preview-pre {
+      margin: 0;
+      padding: 0.75rem;
+      border-radius: 0.5rem;
+      border: 1px solid var(--border);
+      background: var(--surface-alt);
+      overflow: auto;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      font-size: 0.8rem;
+      line-height: 1.45;
+      max-block-size: 62dvb;
+    }
+
+    .dialog-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 0.5rem;
+    }
+
+    details summary {
+      cursor: pointer;
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: var(--muted);
+    }
+
+    .details-body {
+      margin-block-start: 0.55rem;
+      display: grid;
+      gap: 0.55rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <h1>PETeleco — Studio de System Prompt (Text-to-Text)</h1>
+        <div class="subtitle">Sandbox puro de texto-para-texto para testar e ajustar o System Prompt sem câmera, microfone, TTS, roteador Jev ou escrita na memória.</div>
+      </div>
+      <div class="status-pills">
+        <span class="pill" id="pill-provider">Provedor: ...</span>
+        <span class="pill" id="pill-mode">Modo: ...</span>
+        <span class="pill" id="pill-dirty" data-tone="ok">Prompt sincronizado</span>
+      </div>
+    </header>
+
+    <div id="sr-status" class="visually-hidden" aria-live="polite" aria-atomic="true"></div>
+
+    <main class="studio-grid">
+      <!-- LEFT COLUMN: System Prompt Editor + Context Simulator + Model Settings -->
+      <div class="column-stack">
+        <section class="card" aria-labelledby="heading-prompt">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title" id="heading-prompt">System Prompt Base</h2>
+              <div class="muted mono" id="prompt-file-label">prompts/persona_peteleco.md</div>
+            </div>
+            <span class="muted mono" id="prompt-stats">0 chars · ~0 tokens</span>
+          </div>
+
+          <div class="field">
+            <label for="prompt-editor">Instruções do sistema enviadas no campo <code class="mono">systemInstruction</code></label>
+            <textarea id="prompt-editor" name="prompt_base" spellcheck="false"></textarea>
+          </div>
+
+          <div class="actions-row">
+            <button type="button" id="btn-preview-prompt">Ver prompt final montado</button>
+            <button type="button" id="btn-reload-prompt">Recarregar do .md</button>
+            <button type="button" id="btn-save-prompt" class="btn-accent">Salvar no persona_peteleco.md</button>
+          </div>
+        </section>
+
+        <section class="card" aria-labelledby="heading-context">
+          <div class="card-header">
+            <h2 class="card-title" id="heading-context">Simulador de Contexto &amp; Modelo</h2>
+            <label class="check-option" for="chk-incluir-contexto">
+              <input type="checkbox" id="chk-incluir-contexto" checked>
+              <span>Injetar <code class="mono">CONTEXTO DO TURNO</code></span>
+            </label>
+          </div>
+
+          <div id="context-controls" class="column-stack">
+            <div class="controls-grid">
+              <div class="field">
+                <label for="sel-pessoa">Pessoa reconhecida (<code class="mono">PESSOA_ATUAL</code>)</label>
+                <select id="sel-pessoa" name="pessoa_id"></select>
+              </div>
+
+              <div class="field">
+                <label for="sel-identificacao">Canal de identificação</label>
+                <select id="sel-identificacao" name="identificacao">
+                  <option value="rosto+voz">rosto+voz (vendo + ouvindo)</option>
+                  <option value="apenas_rosto">apenas_rosto</option>
+                  <option value="apenas_voz">apenas_voz (fora da câmera)</option>
+                  <option value="apresentacao_verbal">apresentacao_verbal</option>
+                  <option value="desconhecido">desconhecido</option>
+                </select>
+              </div>
+
+              <div class="field">
+                <label for="sel-movimento">Movimento (<code class="mono">ESTADO_CORPORAL</code>)</label>
+                <select id="sel-movimento" name="movimento">
+                  <option value="parado">parado</option>
+                  <option value="andando">andando</option>
+                  <option value="seguindo_rosto">seguindo_rosto</option>
+                  <option value="radar">radar</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="controls-grid">
+              <fieldset>
+                <legend>Modo da Persona</legend>
+                <div class="radio-group">
+                  <div class="radio-option">
+                    <input type="radio" id="modo-normal" name="modo_persona" value="NORMAL" checked>
+                    <label for="modo-normal">NORMAL</label>
+                  </div>
+                  <div class="radio-option">
+                    <input type="radio" id="modo-desgracado" name="modo_persona" value="DESGRACADO">
+                    <label for="modo-desgracado">DESGRACADO</label>
+                  </div>
+                  <div class="radio-option">
+                    <input type="radio" id="modo-serio" name="modo_persona" value="SERIO">
+                    <label for="modo-serio">SERIO</label>
+                  </div>
+                </div>
+              </fieldset>
+
+              <fieldset>
+                <legend>Superfície Física</legend>
+                <div class="radio-group">
+                  <div class="radio-option">
+                    <input type="radio" id="sup-chao" name="superficie" value="chao" checked>
+                    <label for="sup-chao">Chão</label>
+                  </div>
+                  <div class="radio-option">
+                    <input type="radio" id="sup-bancada" name="superficie" value="bancada">
+                    <label for="sup-bancada">Bancada</label>
+                  </div>
+                  <div class="radio-option">
+                    <input type="radio" id="sup-colo" name="superficie" value="no_colo">
+                    <label for="sup-colo">No colo</label>
+                  </div>
+                </div>
+              </fieldset>
+            </div>
+
+            <div class="profile-summary" id="profile-summary">
+              <div class="muted">Carregando perfil...</div>
+            </div>
+
+            <details>
+              <summary>Sobrescrever memória, sala ou telemetria (opcional)</summary>
+              <div class="details-body">
+                <div class="field">
+                  <label for="inp-mem-override">Sobrescrever <code class="mono">MEMORIA_PESSOA</code></label>
+                  <input type="text" id="inp-mem-override" placeholder="Ex.: Ontem queimou um regulador de 5V na bancada">
+                </div>
+                <div class="field">
+                  <label for="inp-sala-override">Sobrescrever <code class="mono">ULTIMAS_FALAS_SALA</code></label>
+                  <input type="text" id="inp-sala-override" placeholder="Ex.: [14:10] Caio: &quot;E aí&quot; -> PETeleco: &quot;Qual foi!&quot;">
+                </div>
+                <div class="field">
+                  <label for="inp-tel-override">Sobrescrever <code class="mono">TELEMETRIA</code></label>
+                  <input type="text" id="inp-tel-override" placeholder="Ex.: bateria 7.6V, temp 35C, objetos: person, cup">
+                </div>
+              </div>
+            </details>
+          </div>
+
+          <hr style="border: 0; border-block-start: 1px solid var(--border); margin: 0.1rem 0;">
+
+          <div class="controls-grid">
+            <fieldset>
+              <legend>Provedor LLM (Text-to-Text)</legend>
+              <div class="radio-group">
+                <div class="radio-option">
+                  <input type="radio" id="prov-gemini" name="provider" value="gemini" checked>
+                  <label for="prov-gemini">Gemini REST</label>
+                </div>
+                <div class="radio-option">
+                  <input type="radio" id="prov-ollama" name="provider" value="ollama">
+                  <label for="prov-ollama">Ollama (/api/chat)</label>
+                </div>
+              </div>
+            </fieldset>
+
+            <div class="field">
+              <label for="inp-model">Modelo</label>
+              <input type="text" id="inp-model" list="model-options" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false">
+              <datalist id="model-options"></datalist>
+            </div>
+          </div>
+
+          <div class="controls-grid">
+            <div class="field">
+              <label for="rng-temp">Temperatura: <span class="mono" id="val-temp">0.85</span></label>
+              <div class="range-row">
+                <input type="range" id="rng-temp" min="0" max="1.5" step="0.05" value="0.85">
+              </div>
+            </div>
+            <div class="field">
+              <label for="inp-max-tokens">Máximo de tokens na saída</label>
+              <input type="number" id="inp-max-tokens" min="32" max="2048" step="16" value="320">
+            </div>
+          </div>
+
+          <div id="provider-warning" class="warn-banner" hidden></div>
+        </section>
+      </div>
+
+      <!-- RIGHT COLUMN: Pure Text-to-Text Chat -->
+      <section class="card chat-card" aria-labelledby="heading-chat">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title" id="heading-chat">Conversa Text-to-Text</h2>
+            <div class="muted" id="turn-counter">0 turnos nesta sessão</div>
+          </div>
+          <div class="actions-row">
+            <button type="button" id="btn-regenerate" class="btn-compact" aria-disabled="true">Regenerar última</button>
+            <button type="button" id="btn-copy-feedback" class="btn-compact btn-accent">Copiar Feedback</button>
+            <button type="button" id="btn-export" class="btn-compact">Exportar JSON</button>
+            <button type="button" id="btn-clear-chat" class="btn-compact">Limpar chat</button>
+          </div>
+        </div>
+
+        <div class="presets-bar" aria-label="Cenários rápidos de teste">
+          <span class="muted">Testes rápidos:</span>
+          <button type="button" class="btn-compact preset-btn" data-prompt="oi peteleco">Oi peteleco</button>
+          <button type="button" class="btn-compact preset-btn" data-prompt="tô pensando em matar a fome num podrão sinistro agora">Resenha / Podrão</button>
+          <button type="button" class="btn-compact preset-btn" data-prompt="ultimamente tô vivendo à base de monster antes das provas">Monster / Humor</button>
+          <button type="button" class="btn-compact preset-btn" data-prompt="tenho prova de calculo 3">Prova Cálculo 3</button>
+          <button type="button" class="btn-compact preset-btn" data-prompt="amanhã tem prova de eletronica de santisteban">Prova Santisteban</button>
+          <button type="button" class="btn-compact preset-btn" data-prompt="tô travado numa ideia de projeto, como organizo isso rápido?">Assistente Geral</button>
+          <button type="button" class="btn-compact preset-btn" data-prompt="preciso ler 8,4V num pino de 3,3V no ESP32, quais resistores uso?">Conta Técnica</button>
+          <button type="button" class="btn-compact preset-btn" data-prompt="Anda até aquela garrafa ali na ponta da mesa.">Trava física</button>
+          <button type="button" class="btn-compact preset-btn" data-prompt="Boa tarde, como está o sistema hoje?">Saudação formal</button>
+        </div>
+
+        <div class="chat-messages scroller" id="chat-messages" tabindex="0" aria-label="Histórico da conversa">
+          <div class="empty-state" id="chat-empty">
+            Edite o <strong>System Prompt</strong> ao lado (ou altere pessoa, modo e superfície) e mande uma mensagem abaixo para testar as respostas do chatbot em texto puro.
+          </div>
+        </div>
+
+        <div id="chat-error" class="alert-box" role="alert" hidden></div>
+
+        <form id="chat-form" class="composer-form">
+          <div class="growable-textarea" data-replicated-value="">
+            <label for="chat-input" class="visually-hidden">Mensagem para testar o chatbot</label>
+            <textarea
+              id="chat-input"
+              name="message"
+              placeholder="Digite sua fala de teste... (Enter envia, Shift+Enter quebra linha)"
+              enterkeyhint="send"
+            ></textarea>
+          </div>
+          <button type="submit" id="btn-send" class="btn-primary">Enviar</button>
+          <div class="composer-hint">
+            <kbd>Enter</kbd> envia · <kbd>Shift</kbd>+<kbd>Enter</kbd> nova linha · Nenhuma interação aqui grava no <code class="mono">SQLite</code> ou <code class="mono">perfis_pessoas.json</code>.
+          </div>
+        </form>
+      </section>
+    </main>
+  </div>
+
+  <!-- Preview assembled system prompt modal -->
+  <dialog id="dialog-preview" closedby="any" aria-labelledby="dialog-preview-title">
+    <div class="dialog-head">
+      <h2 id="dialog-preview-title">Prompt Final Enviado ao Modelo</h2>
+      <span class="muted mono" id="preview-meta">0 chars</span>
+    </div>
+    <pre class="preview-pre mono" id="preview-content"></pre>
+    <div class="dialog-actions">
+      <button type="button" id="btn-copy-preview">Copiar texto</button>
+      <form method="dialog">
+        <button type="submit" autofocus>Fechar</button>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- Confirm overwrite of prompts/persona_peteleco.md -->
+  <dialog id="dialog-save" class="dialog-narrow" aria-labelledby="dialog-save-title">
+    <div class="dialog-head">
+      <h2 id="dialog-save-title">Salvar System Prompt no arquivo?</h2>
+    </div>
+    <p style="margin: 0; font-size: 0.88rem;">
+      Isso vai atualizar o bloco <code class="mono">## 3. System Prompt</code> em <code class="mono">prompts/persona_peteleco.md</code>, mantendo as demais seções e o bloco <code class="mono">=== CONTEXTO DO TURNO ===</code> preservados.
+    </p>
+    <form method="dialog" class="dialog-actions">
+      <button value="cancel" autofocus>Cancelar</button>
+      <button value="confirm" class="btn-accent">Confirmar e salvar</button>
+    </form>
+  </dialog>
+
+  <!-- Confirm discard unsaved edits on reload -->
+  <dialog id="dialog-reload" class="dialog-narrow" aria-labelledby="dialog-reload-title">
+    <div class="dialog-head">
+      <h2 id="dialog-reload-title">Descartar alterações não salvas?</h2>
+    </div>
+    <p style="margin: 0; font-size: 0.88rem;">
+      Você editou o System Prompt no editor. Recarregar do arquivo <code class="mono">.md</code> vai substituir o texto atual do editor.
+    </p>
+    <form method="dialog" class="dialog-actions">
+      <button value="cancel" autofocus>Manter edição</button>
+      <button value="confirm" class="btn-primary">Recarregar do arquivo</button>
+    </form>
+  </dialog>
+
+  <script>
+    (() => {
+      const state = {
+        savedPrompt: "",
+        geminiConfigured: false,
+        geminiModels: [],
+        ollamaOnline: false,
+        ollamaModels: [],
+        perfis: [],
+        messages: [],
+        busy: false,
+        lastCompositionEndAt: null,
+      };
+
+      const el = {
+        promptEditor: document.getElementById("prompt-editor"),
+        promptFileLabel: document.getElementById("prompt-file-label"),
+        promptStats: document.getElementById("prompt-stats"),
+        pillProvider: document.getElementById("pill-provider"),
+        pillMode: document.getElementById("pill-mode"),
+        pillDirty: document.getElementById("pill-dirty"),
+        srStatus: document.getElementById("sr-status"),
+        chkIncluirContexto: document.getElementById("chk-incluir-contexto"),
+        contextControls: document.getElementById("context-controls"),
+        selPessoa: document.getElementById("sel-pessoa"),
+        selIdentificacao: document.getElementById("sel-identificacao"),
+        selMovimento: document.getElementById("sel-movimento"),
+        profileSummary: document.getElementById("profile-summary"),
+        inpMemOverride: document.getElementById("inp-mem-override"),
+        inpSalaOverride: document.getElementById("inp-sala-override"),
+        inpTelOverride: document.getElementById("inp-tel-override"),
+        inpModel: document.getElementById("inp-model"),
+        modelOptions: document.getElementById("model-options"),
+        rngTemp: document.getElementById("rng-temp"),
+        valTemp: document.getElementById("val-temp"),
+        inpMaxTokens: document.getElementById("inp-max-tokens"),
+        providerWarning: document.getElementById("provider-warning"),
+        turnCounter: document.getElementById("turn-counter"),
+        chatMessages: document.getElementById("chat-messages"),
+        chatEmpty: document.getElementById("chat-empty"),
+        chatError: document.getElementById("chat-error"),
+        chatForm: document.getElementById("chat-form"),
+        chatInput: document.getElementById("chat-input"),
+        btnSend: document.getElementById("btn-send"),
+        btnRegenerate: document.getElementById("btn-regenerate"),
+        btnCopyFeedback: document.getElementById("btn-copy-feedback"),
+        btnExport: document.getElementById("btn-export"),
+        btnClearChat: document.getElementById("btn-clear-chat"),
+        btnPreviewPrompt: document.getElementById("btn-preview-prompt"),
+        btnReloadPrompt: document.getElementById("btn-reload-prompt"),
+        btnSavePrompt: document.getElementById("btn-save-prompt"),
+        dialogPreview: document.getElementById("dialog-preview"),
+        previewMeta: document.getElementById("preview-meta"),
+        previewContent: document.getElementById("preview-content"),
+        btnCopyPreview: document.getElementById("btn-copy-preview"),
+        dialogSave: document.getElementById("dialog-save"),
+        dialogReload: document.getElementById("dialog-reload"),
+      };
+
+      function announce(text) {
+        el.srStatus.textContent = "";
+        window.setTimeout(() => {
+          el.srStatus.textContent = text;
+        }, 40);
+      }
+
+      function showError(msg) {
+        if (!msg) {
+          el.chatError.hidden = true;
+          el.chatError.textContent = "";
+          return;
+        }
+        el.chatError.textContent = msg;
+        el.chatError.hidden = false;
+      }
+
+      function getCheckedRadio(name, fallback) {
+        const node = document.querySelector(`input[name="${name}"]:checked`);
+        return node ? node.value : fallback;
+      }
+
+      function setCheckedRadio(name, value) {
+        const node = document.querySelector(`input[name="${name}"][value="${value}"]`);
+        if (node) node.checked = true;
+      }
+
+      function getCurrentConfig() {
+        return {
+          prompt_base: el.promptEditor.value,
+          incluir_contexto: el.chkIncluirContexto.checked,
+          provider: getCheckedRadio("provider", "gemini"),
+          model: el.inpModel.value.trim(),
+          temperature: Number.isFinite(parseFloat(el.rngTemp.value)) ? parseFloat(el.rngTemp.value) : 0.85,
+          max_tokens: parseInt(el.inpMaxTokens.value, 10) || 320,
+          contexto: {
+            pessoa_id: el.selPessoa.value || "desconhecido",
+            modo_persona: getCheckedRadio("modo_persona", "NORMAL"),
+            identificacao: el.selIdentificacao.value,
+            superficie: getCheckedRadio("superficie", "chao"),
+            movimento: el.selMovimento.value,
+            memoria_override: el.inpMemOverride.value.trim(),
+            sala_override: el.inpSalaOverride.value.trim(),
+            telemetria_override: el.inpTelOverride.value.trim(),
+          },
+        };
+      }
+
+      function isPromptDirty() {
+        return el.promptEditor.value.trim() !== state.savedPrompt.trim();
+      }
+
+      function updatePromptStats() {
+        const txt = el.promptEditor.value;
+        const chars = txt.length;
+        const lines = txt ? txt.split(/\r?\n/).length : 0;
+        const approxTokens = chars ? Math.max(1, Math.round(chars / 4)) : 0;
+        el.promptStats.textContent = `${chars} chars · ${lines} linhas · ~${approxTokens} tokens`;
+
+        const dirty = isPromptDirty();
+        el.pillDirty.textContent = dirty ? "Prompt editado (não salvo)" : "Prompt sincronizado";
+        el.pillDirty.dataset.tone = dirty ? "warn" : "ok";
+      }
+
+      function updateProfileSummary() {
+        const pid = el.selPessoa.value;
+        const perfil = state.perfis.find((p) => p.id === pid);
+        el.profileSummary.textContent = "";
+        if (!perfil) {
+          const fallback = document.createElement("div");
+          fallback.className = "muted";
+          fallback.textContent = "Perfil não encontrado.";
+          el.profileSummary.appendChild(fallback);
+          return;
+        }
+
+        const header = document.createElement("div");
+        const strong = document.createElement("strong");
+        strong.textContent = `${perfil.nome} (${perfil.papel})`;
+        header.appendChild(strong);
+
+        const tags = document.createElement("div");
+        tags.className = "tag-row";
+        const tagItems = [
+          `intimidade ${perfil.nivel_intimidade}/5`,
+          `tom=${perfil.tom_com_a_pessoa || "-"}`,
+          `palavrão=${perfil.libera_palavrao ? "sim" : "não"}`,
+          `zoeira=${perfil.libera_zoeira_pesada ? "sim" : "não"}`,
+          `bordão_chefe=${perfil.usa_bordao_chefe ? "sim" : "não"}`,
+        ];
+        for (const t of tagItems) {
+          const span = document.createElement("span");
+          span.className = "mini-tag mono";
+          span.textContent = t;
+          tags.appendChild(span);
+        }
+
+        el.profileSummary.appendChild(header);
+        el.profileSummary.appendChild(tags);
+
+        if (perfil.tracos_personalidade && perfil.tracos_personalidade.length) {
+          const tr = document.createElement("div");
+          tr.className = "muted";
+          tr.textContent = `Traços: ${perfil.tracos_personalidade.join(" | ")}`;
+          el.profileSummary.appendChild(tr);
+        }
+
+        const reqModo = getCheckedRadio("modo_persona", "NORMAL");
+        const formalByRole =
+          perfil.papel === "professor_orientador" ||
+          ["serio", "formal", "respeitoso_formal_objetivo"].includes(
+            (perfil.tom_com_a_pessoa || "").toLowerCase()
+          );
+        const efetivo = !el.chkIncluirContexto.checked
+          ? "RAW (sem contexto)"
+          : reqModo === "SERIO" || formalByRole
+            ? formalByRole && reqModo !== "SERIO"
+              ? "SERIO (trava do perfil)"
+              : "SERIO"
+            : reqModo === "DESGRACADO"
+              ? "DESGRACADO"
+              : "NORMAL";
+        el.pillMode.textContent = `Modo: ${efetivo}`;
+        el.pillMode.dataset.tone = efetivo.startsWith("SERIO")
+          ? "warn"
+          : efetivo === "DESGRACADO"
+            ? "danger"
+            : "info";
+      }
+
+      function syncProviderUI(forceDefaultModel = false) {
+        const provider = getCheckedRadio("provider", "gemini");
+        el.modelOptions.textContent = "";
+        const list = provider === "gemini" ? state.geminiModels : state.ollamaModels;
+        for (const m of list) {
+          const opt = document.createElement("option");
+          opt.value = m;
+          el.modelOptions.appendChild(opt);
+        }
+        if (forceDefaultModel || !el.inpModel.value.trim() || !list.includes(el.inpModel.value.trim())) {
+          if (list.length) {
+            el.inpModel.value = list[0];
+          }
+        }
+
+        let warn = "";
+        if (provider === "gemini" && !state.geminiConfigured) {
+          warn = "GEMINI_API_KEY não configurada no .env. Preencha no .env ou selecione Ollama (/api/chat).";
+        } else if (provider === "ollama" && !state.ollamaOnline) {
+          warn = "Ollama offline em http://localhost:11434. Rode `ollama serve` para testar modelos locais.";
+        } else if (provider === "ollama" && state.ollamaModels.length === 0) {
+          warn = "Ollama online, mas sem modelo de chat (ex.: `ollama pull gemma3:4b`; `tev1` é só do roteador).";
+        }
+
+        if (warn) {
+          el.providerWarning.textContent = warn;
+          el.providerWarning.hidden = false;
+        } else {
+          el.providerWarning.hidden = true;
+          el.providerWarning.textContent = "";
+        }
+
+        const modelLabel = el.inpModel.value.trim() || "-";
+        el.pillProvider.textContent = `${provider === "gemini" ? "Gemini" : "Ollama"}: ${modelLabel}`;
+        el.pillProvider.dataset.tone = warn ? "warn" : "ok";
+      }
+
+      function updateBusy(busy) {
+        state.busy = busy;
+        el.btnSend.setAttribute("aria-disabled", busy ? "true" : "false");
+        el.btnSend.textContent = busy ? "Gerando..." : "Enviar";
+        const canRegen =
+          !busy && state.messages.some((m) => m.role === "user");
+        el.btnRegenerate.setAttribute("aria-disabled", canRegen ? "false" : "true");
+      }
+
+      function renderMessages() {
+        el.chatMessages.textContent = "";
+        if (state.messages.length === 0) {
+          el.chatMessages.appendChild(el.chatEmpty);
+          el.chatEmpty.hidden = false;
+          el.turnCounter.textContent = "0 turnos nesta sessão";
+          updateBusy(state.busy);
+          return;
+        }
+        el.chatEmpty.hidden = true;
+        const userTurns = state.messages.filter((m) => m.role === "user").length;
+        el.turnCounter.textContent = `${userTurns} ${userTurns === 1 ? "turno" : "turnos"} nesta sessão`;
+
+        state.messages.forEach((msg, idx) => {
+          const article = document.createElement("article");
+          article.className = "msg-item";
+          article.dataset.role = msg.role;
+
+          const head = document.createElement("div");
+          head.className = "msg-role";
+          const roleSpan = document.createElement("span");
+          roleSpan.textContent = msg.role === "user" ? "Usuário (Teste)" : "PETeleco";
+          head.appendChild(roleSpan);
+
+          const body = document.createElement("div");
+          body.className = "msg-text";
+          body.textContent = msg.text;
+
+          const footer = document.createElement("div");
+          footer.className = "msg-footer";
+
+          const meta = document.createElement("span");
+          meta.className = "msg-meta mono";
+          if (msg.role === "assistant" && msg.meta) {
+            const u = msg.meta.usage || {};
+            const tokStr =
+              u.total_tokens > 0
+                ? ` · ${u.prompt_tokens || 0}→${u.output_tokens || 0} tok`
+                : "";
+            meta.textContent = `${msg.meta.model || "-"} · ${msg.meta.latency_ms ?? "-"} ms${tokStr} · modo=${msg.meta.modo_efetivo || "-"}`;
+          } else {
+            meta.textContent = `Turno #${idx + 1}`;
+          }
+
+          const btns = document.createElement("div");
+          btns.className = "actions-row";
+
+          const btnCopy = document.createElement("button");
+          btnCopy.type = "button";
+          btnCopy.className = "btn-compact";
+          btnCopy.textContent = "Copiar";
+          btnCopy.addEventListener("click", async () => {
+            try {
+              await navigator.clipboard.writeText(msg.text);
+              btnCopy.textContent = "Copiado";
+              window.setTimeout(() => {
+                btnCopy.textContent = "Copiar";
+              }, 1200);
+            } catch (_) {}
+          });
+          btns.appendChild(btnCopy);
+
+          if (msg.role === "user") {
+            const btnRewind = document.createElement("button");
+            btnRewind.type = "button";
+            btnRewind.className = "btn-compact";
+            btnRewind.textContent = "Editar daqui";
+            btnRewind.addEventListener("click", () => {
+              if (state.busy) return;
+              el.chatInput.value = msg.text;
+              syncGrowableFallback();
+              state.messages = state.messages.slice(0, idx);
+              renderMessages();
+              el.chatInput.focus();
+            });
+            btns.appendChild(btnRewind);
+          }
+
+          footer.appendChild(meta);
+          footer.appendChild(btns);
+          article.appendChild(head);
+          article.appendChild(body);
+          article.appendChild(footer);
+
+          if (msg.role === "assistant") {
+            const fbBox = document.createElement("div");
+            fbBox.className = "feedback-box";
+
+            const row = document.createElement("div");
+            row.className = "rating-row";
+            const lbl = document.createElement("span");
+            lbl.className = "rating-label";
+            lbl.textContent = "Nota:";
+            row.appendChild(lbl);
+
+            for (let score = 0; score <= 5; score += 1) {
+              const b = document.createElement("button");
+              b.type = "button";
+              b.className = "rating-chip";
+              b.dataset.score = String(score);
+              b.textContent = String(score);
+              b.setAttribute("aria-pressed", msg.rating === score ? "true" : "false");
+              b.addEventListener("click", () => {
+                msg.rating = msg.rating === score ? null : score;
+                row.querySelectorAll("button.rating-chip").forEach((chip) => {
+                  const chipScore = Number(chip.dataset.score);
+                  chip.setAttribute("aria-pressed", msg.rating === chipScore ? "true" : "false");
+                });
+              });
+              row.appendChild(b);
+            }
+
+            const noteId = `fb-note-${idx}`;
+            const noteLbl = document.createElement("label");
+            noteLbl.className = "visually-hidden";
+            noteLbl.setAttribute("for", noteId);
+            noteLbl.textContent = `Comentário do turno ${idx + 1}`;
+
+            const noteInp = document.createElement("input");
+            noteInp.type = "text";
+            noteInp.id = noteId;
+            noteInp.className = "feedback-note-input";
+            noteInp.placeholder = "Feedback rápido desse turno (ex.: muito clichê, faltou piada, ótimo timing)...";
+            noteInp.value = msg.feedback || "";
+            noteInp.addEventListener("input", () => {
+              msg.feedback = noteInp.value;
+            });
+
+            fbBox.appendChild(row);
+            fbBox.appendChild(noteLbl);
+            fbBox.appendChild(noteInp);
+            article.appendChild(fbBox);
+          }
+
+          el.chatMessages.appendChild(article);
+        });
+
+        el.chatMessages.scrollTop = el.chatMessages.scrollHeight;
+        updateBusy(state.busy);
+      }
+
+      async function sendChatWithCurrentMessages() {
+        if (state.busy) return;
+        const cfg = getCurrentConfig();
+        if (!state.messages.length || state.messages[state.messages.length - 1].role !== "user") {
+          return;
+        }
+        showError("");
+        updateBusy(true);
+        announce("Enviando mensagem para o modelo...");
+
+        try {
+          const resp = await fetch("/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ...cfg,
+              messages: state.messages.map((m) => ({ role: m.role, text: m.text })),
+            }),
+          });
+          const data = await resp.json();
+          if (!resp.ok || !data.ok) {
+            showError(data.error || "Erro ao chamar o modelo.");
+            announce("Erro ao gerar resposta.");
+            return;
+          }
+          state.messages.push({
+            role: "assistant",
+            text: data.reply,
+            meta: {
+              provider: data.provider,
+              model: data.model,
+              latency_ms: data.latency_ms,
+              usage: data.usage,
+              modo_efetivo: data.modo_efetivo,
+            },
+          });
+          renderMessages();
+          announce(`Resposta recebida em ${data.latency_ms} milissegundos.`);
+        } catch (err) {
+          showError(`Erro de comunicação com o servidor local: ${err}`);
+        } finally {
+          updateBusy(false);
+        }
+      }
+
+      function syncGrowableFallback() {
+        if (!CSS.supports("field-sizing", "content")) {
+          const wrapper = el.chatInput.closest(".growable-textarea");
+          if (wrapper) {
+            wrapper.dataset.replicatedValue = el.chatInput.value;
+          }
+        }
+      }
+
+      async function openPreviewModal() {
+        const cfg = getCurrentConfig();
+        const resp = await fetch("/api/preview_prompt", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt_base: cfg.prompt_base,
+            incluir_contexto: cfg.incluir_contexto,
+            contexto: cfg.contexto,
+          }),
+        });
+        const data = await resp.json();
+        el.previewContent.textContent = data.system_instruction || "";
+        el.previewMeta.textContent = `${data.chars} chars · ~${data.approx_tokens} tokens · modo=${data.modo_efetivo}`;
+        el.dialogPreview.showModal();
+      }
+
+      async function reloadPromptFromDisk() {
+        const resp = await fetch("/api/prompt/reload", { method: "POST", body: "{}" });
+        const data = await resp.json();
+        if (data.ok) {
+          state.savedPrompt = data.prompt_base || "";
+          el.promptEditor.value = state.savedPrompt;
+          updatePromptStats();
+          announce("System Prompt recarregado do arquivo.");
+        }
+      }
+
+      async function savePromptToDisk() {
+        showError("");
+        const resp = await fetch("/api/prompt/save", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt_base: el.promptEditor.value }),
+        });
+        const data = await resp.json();
+        if (!resp.ok || !data.ok) {
+          showError(data.error || "Não foi possível salvar o prompt.");
+          return;
+        }
+        state.savedPrompt = data.prompt_base || el.promptEditor.value;
+        el.promptEditor.value = state.savedPrompt;
+        updatePromptStats();
+        announce("System Prompt salvo em persona_peteleco.md.");
+      }
+
+      // Light-dismiss polyfill ONLY when native closedBy is missing
+      if (!("closedBy" in HTMLDialogElement.prototype)) {
+        const outside = (e, dialog) => {
+          const r = dialog.getBoundingClientRect();
+          return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+        };
+        for (const dialog of document.querySelectorAll('dialog[closedby="any"]')) {
+          let pressedOutside = false;
+          dialog.addEventListener("pointerdown", (e) => {
+            pressedOutside = outside(e, dialog);
+          });
+          dialog.addEventListener("pointerup", (e) => {
+            if (pressedOutside && outside(e, dialog)) dialog.close();
+          });
+        }
+      }
+
+      // Events
+      el.promptEditor.addEventListener("input", updatePromptStats);
+
+      el.chkIncluirContexto.addEventListener("change", () => {
+        el.contextControls.hidden = !el.chkIncluirContexto.checked;
+        updateProfileSummary();
+      });
+
+      el.selPessoa.addEventListener("change", updateProfileSummary);
+      document.querySelectorAll('input[name="modo_persona"]').forEach((r) => {
+        r.addEventListener("change", updateProfileSummary);
+      });
+
+      document.querySelectorAll('input[name="provider"]').forEach((r) => {
+        r.addEventListener("change", () => syncProviderUI(true));
+      });
+
+      el.inpModel.addEventListener("input", () => syncProviderUI(false));
+      el.rngTemp.addEventListener("input", () => {
+        el.valTemp.textContent = Number(el.rngTemp.value).toFixed(2);
+      });
+
+      el.chatInput.addEventListener("input", syncGrowableFallback);
+      el.chatInput.addEventListener("compositionend", (event) => {
+        state.lastCompositionEndAt = event.timeStamp;
+      });
+      el.chatInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" && !event.shiftKey) {
+          event.preventDefault();
+          if (event.isComposing || event.keyCode === 229) {
+            return;
+          }
+          if (
+            state.lastCompositionEndAt !== null &&
+            Math.abs(event.timeStamp - state.lastCompositionEndAt) < 50
+          ) {
+            return;
+          }
+          el.chatForm.requestSubmit();
+        }
+      });
+
+      el.chatForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (state.busy) return;
+        const text = el.chatInput.value.trim();
+        if (!text) return;
+        el.chatInput.value = "";
+        syncGrowableFallback();
+        state.messages.push({ role: "user", text });
+        renderMessages();
+        await sendChatWithCurrentMessages();
+        el.chatInput.focus();
+      });
+
+      document.querySelectorAll(".preset-btn").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          if (state.busy) return;
+          const texto = btn.dataset.prompt || "";
+          if (!texto) return;
+          state.messages.push({ role: "user", text: texto });
+          renderMessages();
+          await sendChatWithCurrentMessages();
+        });
+      });
+
+      el.btnRegenerate.addEventListener("click", async () => {
+        if (state.busy || el.btnRegenerate.getAttribute("aria-disabled") === "true") return;
+        while (
+          state.messages.length &&
+          state.messages[state.messages.length - 1].role !== "user"
+        ) {
+          state.messages.pop();
+        }
+        if (!state.messages.length) return;
+        renderMessages();
+        await sendChatWithCurrentMessages();
+      });
+
+      el.btnClearChat.addEventListener("click", () => {
+        if (state.busy) return;
+        state.messages = [];
+        showError("");
+        renderMessages();
+        announce("Conversa limpa.");
+      });
+
+      function formatFeedbackMarkdown() {
+        const cfg = getCurrentConfig();
+        const pessoa = cfg.contexto.pessoa_id || "desconhecido";
+        const modo = cfg.incluir_contexto ? cfg.contexto.modo_persona : "RAW";
+        const notas = state.messages
+          .filter((m) => m.role === "assistant" && typeof m.rating === "number")
+          .map((m) => m.rating);
+        const media = notas.length
+          ? `${(notas.reduce((a, b) => a + b, 0) / notas.length).toFixed(1)}/5`
+          : "sem notas";
+
+        const linhas = [
+          `[Feedback Studio PETeleco | pessoa=${pessoa} | modo_solicitado=${modo} | modelo=${cfg.model || "-"} | media=${media}]`,
+          "",
+        ];
+        state.messages.forEach((msg, idx) => {
+          if (msg.role === "user") {
+            linhas.push(`Usuário (Teste) [Turno #${idx + 1}]`);
+            linhas.push(msg.text);
+          } else {
+            const m = msg.meta || {};
+            const u = m.usage || {};
+            const tok = u.total_tokens > 0 ? ` · ${u.prompt_tokens || 0}→${u.output_tokens || 0} tok` : "";
+            linhas.push(`PETeleco [Turno #${idx + 1} · ${m.model || "-"} · ${m.latency_ms ?? "-"} ms${tok} · modo=${m.modo_efetivo || "-"}]`);
+            linhas.push(msg.text);
+            const parts = [];
+            if (typeof msg.rating === "number") parts.push(`Nota: ${msg.rating}/5`);
+            if ((msg.feedback || "").trim()) parts.push(`Obs: ${msg.feedback.trim()}`);
+            if (parts.length) linhas.push(`> ${parts.join(" | ")}`);
+          }
+          linhas.push("");
+        });
+        return linhas.join("\n").trim();
+      }
+
+      el.btnCopyFeedback.addEventListener("click", async () => {
+        if (!state.messages.length) {
+          showError("Envie ao menos uma mensagem antes de copiar feedback.");
+          return;
+        }
+        try {
+          await navigator.clipboard.writeText(formatFeedbackMarkdown());
+          el.btnCopyFeedback.textContent = "Feedback copiado!";
+          announce("Feedback da conversa copiado para a área de transferência.");
+          window.setTimeout(() => {
+            el.btnCopyFeedback.textContent = "Copiar Feedback";
+          }, 1500);
+        } catch (_) {
+          showError("Não foi possível acessar a área de transferência; use Exportar JSON.");
+        }
+      });
+
+      el.btnExport.addEventListener("click", () => {
+        const payload = {
+          exported_at: new Date().toISOString(),
+          config: getCurrentConfig(),
+          messages: state.messages,
+        };
+        const blob = new Blob([JSON.stringify(payload, null, 2)], {
+          type: "application/json",
+        });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `peteleco-prompt-test-${Date.now()}.json`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      });
+
+      el.btnPreviewPrompt.addEventListener("click", openPreviewModal);
+
+      el.btnCopyPreview.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(el.previewContent.textContent || "");
+          el.btnCopyPreview.textContent = "Copiado!";
+          window.setTimeout(() => {
+            el.btnCopyPreview.textContent = "Copiar texto";
+          }, 1200);
+        } catch (_) {}
+      });
+
+      el.btnSavePrompt.addEventListener("click", () => {
+        if (!el.promptEditor.value.trim()) {
+          showError("O System Prompt não pode estar vazio antes de salvar.");
+          return;
+        }
+        el.dialogSave.showModal();
+      });
+
+      el.dialogSave.addEventListener("close", () => {
+        const choice = el.dialogSave.returnValue;
+        el.dialogSave.returnValue = "";
+        if (choice === "confirm") {
+          savePromptToDisk();
+        }
+      });
+
+      el.btnReloadPrompt.addEventListener("click", () => {
+        if (isPromptDirty()) {
+          el.dialogReload.showModal();
+        } else {
+          reloadPromptFromDisk();
+        }
+      });
+
+      el.dialogReload.addEventListener("close", () => {
+        const choice = el.dialogReload.returnValue;
+        el.dialogReload.returnValue = "";
+        if (choice === "confirm") {
+          reloadPromptFromDisk();
+        }
+      });
+
+      async function bootstrap() {
+        try {
+          const resp = await fetch("/api/state");
+          const data = await resp.json();
+          state.savedPrompt = data.prompt_base || "";
+          el.promptEditor.value = state.savedPrompt;
+          el.promptFileLabel.textContent = data.prompt_path || "prompts/persona_peteleco.md";
+
+          state.geminiConfigured = Boolean(data.gemini_configured);
+          state.geminiModels = data.gemini_models || [];
+          state.ollamaOnline = Boolean(data.ollama_online);
+          state.ollamaModels = data.ollama_models || [];
+          state.perfis = data.perfis || [];
+
+          el.selPessoa.textContent = "";
+          for (const p of state.perfis) {
+            const opt = document.createElement("option");
+            opt.value = p.id;
+            opt.textContent = `${p.nome} (${p.papel})`;
+            el.selPessoa.appendChild(opt);
+          }
+
+          const def = data.defaults || {};
+          if (def.pessoa_id) el.selPessoa.value = def.pessoa_id;
+          if (def.identificacao) el.selIdentificacao.value = def.identificacao;
+          if (def.movimento) el.selMovimento.value = def.movimento;
+          setCheckedRadio("modo_persona", def.modo_persona || "NORMAL");
+          setCheckedRadio("superficie", def.superficie || "chao");
+          setCheckedRadio("provider", def.provider || "gemini");
+          el.inpModel.value = def.model || "";
+          el.rngTemp.value = String(def.temperature ?? 0.85);
+          el.valTemp.textContent = Number(el.rngTemp.value).toFixed(2);
+          el.inpMaxTokens.value = String(def.max_tokens ?? 320);
+          el.chkIncluirContexto.checked = Boolean(def.incluir_contexto ?? true);
+          el.contextControls.hidden = !el.chkIncluirContexto.checked;
+
+          updatePromptStats();
+          updateProfileSummary();
+          syncProviderUI(false);
+          renderMessages();
+        } catch (err) {
+          showError(`Falha ao carregar estado inicial do Studio: ${err}`);
+        }
+      }
+
+      bootstrap();
+    })();
+  </script>
+</body>
+</html>

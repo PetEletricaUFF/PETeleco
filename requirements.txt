@@ -6,9 +6,11 @@ torch>=2.1.0
 torchaudio>=2.1.0
 
 # ---------------------------------------------------------------------------
-# Optional local backends (automatic fallback exists if omitted):
+# Optional / recommended backends (automatic fallback exists if omitted):
+# edge-tts>=7.0.0         # Natural PT-BR neural voice (Antonio/Thalita/Francisca) + av>=12.0.0
+# av>=12.0.0              # In-memory MP3/audio decode for edge-tts (installed alongside faster-whisper)
 # faster-whisper>=1.0.0   # Local CUDA/CPU PT-BR STT (falls back to Gemini Audio REST)
 # resemblyzer>=0.1.3      # 256-D d-vector voice ID (falls back to torchaudio_192d)
 # opencv-python>=4.9.0    # Local YuNet + SFace / YOLOv8n vision
-# piper-tts               # Local offline PT-BR voice synthesis
+# piper-tts               # Local offline PT-BR voice synthesis fallback
 # ---------------------------------------------------------------------------

@@ -507,16 +507,14 @@ class GerenciadorMemoriaPessoas:
 
     @staticmethod
     def _resumir_episodio_local(fala: str, resposta: str = "") -> str:
-        """Compacta pergunta do usuario e resposta do PETeleco em uma linha para a janela FIFO."""
-        fala_limpa = re.sub(r"\s+", " ", fala).strip()
-        if len(fala_limpa) > 65:
-            fala_limpa = fala_limpa[:62].rstrip() + "..."
-        resp_limpa = re.sub(r"\s+", " ", resposta or "").strip()
-        if not resp_limpa:
-            return fala_limpa
-        if len(resp_limpa) > 75:
-            resp_limpa = resp_limpa[:72].rstrip() + "..."
-        return f"Disse: '{fala_limpa}' -> PETeleco: '{resp_limpa}'"
+        """Compacta o assunto trazido pelo usuario sem gravar bordoes antigos da resposta."""
+        fala_limpa = re.sub(r"\s+", " ", fala or "").strip()
+        if len(fala_limpa) > 95:
+            fala_limpa = fala_limpa[:92].rstrip() + "..."
+        if not fala_limpa and resposta:
+            resp_limpa = re.sub(r"\s+", " ", resposta).strip()
+            return resp_limpa[:92].rstrip() + ("..." if len(resp_limpa) > 95 else "")
+        return f"Assunto: '{fala_limpa}'"
 
     @staticmethod
     def _evoluir_tracos_heuristico(perfil: Dict[str, Any], fala_usuario: str) -> None:
