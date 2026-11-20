@@ -59,7 +59,7 @@ Nunca desconsidere ou reverta estes fatos já validados:
 * **Pares Bilíngues Sincronizados:**
   * Visão Geral: [`README.md`](README.md) (EN) ↔ [`README.pt-BR.md`](README.pt-BR.md) (PT-BR)
   * Regras de Agentes: [`AGENTS.md`](AGENTS.md) (EN) ↔ [`AGENTS.pt-BR.md`](AGENTS.pt-BR.md) (PT-BR)
-  * Memória Técnica: [`docs/context.md`](docs/context.md) (EN) ↔ [`docs/context.pt-BR.md`](docs/context.pt-BR.md) (PT-BR)
+  * Memória Técnica: [`CONTEXT.md`](CONTEXT.md) (EN) ↔ [`CONTEXT.pt-BR.md`](CONTEXT.pt-BR.md) (PT-BR) *(espelhado em [`docs/context.md`](docs/context.md) ↔ [`docs/context.pt-BR.md`](docs/context.pt-BR.md))*
   * Arquitetura & Protocolos: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (EN) ↔ [`docs/ARCHITECTURE.pt-BR.md`](docs/ARCHITECTURE.pt-BR.md) (PT-BR)
 * **Rigor & Fidelidade:** Atualizar `docs/context.md` e `docs/context.pt-BR.md` a cada avanço validado. Separar sempre com clareza **o que já foi implementado/medido** (Camada 1 STT + biometria vocal GE2E 256-D em CPU, Camada 2 roteador `/v1/systemone` de 9 perguntas + bateria de 36 casos, Camada 3 Multi-Cérebro com 5 prompts + 9 skills estilo Alexa + Grafo SQLite com `benchmark_grafo.py` + Edge/Piper TTS + Webcam `YuNet+SFace` e UIs Web `ui_peteleco`, `studio_prompt`, `arena_prompts`), **o que já roda no repo irmão `Rover`** (hardware físico, UDP e firmwares) e a **ponte final de despacho UDP/serial para os motores físicos**.
 * **Tom de Comunicação:** Direto, prático, um passo de bancada por vez, mantendo código e documentação claros e fiéis aos fatos observados.

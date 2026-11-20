@@ -155,6 +155,8 @@ Consumo medido/projetado para a arquitetura completa (**Multi-Cérebro + 9 Skill
 PETeleco/
 ├── README.md                   # Documentação em Inglês
 ├── README.pt-BR.md             # Documentação em Português (BR)
+├── CONTEXT.md                  # Memória técnica contínua e restrições físicas (EN)
+├── CONTEXT.pt-BR.md            # Memória técnica contínua e restrições físicas (PT-BR)
 ├── AGENTS.md                   # Diretrizes para agentes & contexto paralelo (EN)
 ├── AGENTS.pt-BR.md             # Diretrizes para agentes & contexto paralelo (PT-BR)
 ├── .env.example                # Modelo das variáveis de ambiente (GEMINI_API_KEY etc.)

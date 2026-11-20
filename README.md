@@ -155,6 +155,8 @@ Measured/projected resource usage for the full pipeline (**Multi-Brain + 9 Alexa
 PETeleco/
 ├── README.md                   # English documentation
 ├── README.pt-BR.md             # Documentação em Português (BR)
+├── CONTEXT.md                  # Continuous research memory & hardware constraints (EN)
+├── CONTEXT.pt-BR.md            # Memória técnica contínua e contexto físico (PT-BR)
 ├── AGENTS.md                   # AI engineering rules & shared Rover/PETeleco context (EN)
 ├── AGENTS.pt-BR.md             # Diretrizes para agentes & contexto paralelo (PT-BR)
 ├── .env.example                # Environment variable template (GEMINI_API_KEY, etc.)

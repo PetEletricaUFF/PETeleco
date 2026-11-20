@@ -59,7 +59,7 @@ Never overwrite or ignore these verified physical and computational facts:
 * **Bilingual Documentation Pairs (Keep Synchronized):**
   * Overview: [`README.md`](README.md) (EN) ↔ [`README.pt-BR.md`](README.pt-BR.md) (PT-BR)
   * Agent Rules: [`AGENTS.md`](AGENTS.md) (EN) ↔ [`AGENTS.pt-BR.md`](AGENTS.pt-BR.md) (PT-BR)
-  * Research Memory: [`docs/context.md`](docs/context.md) (EN) ↔ [`docs/context.pt-BR.md`](docs/context.pt-BR.md) (PT-BR)
+  * Research Memory: [`CONTEXT.md`](CONTEXT.md) (EN) ↔ [`CONTEXT.pt-BR.md`](CONTEXT.pt-BR.md) (PT-BR) *(mirrored at [`docs/context.md`](docs/context.md) ↔ [`docs/context.pt-BR.md`](docs/context.pt-BR.md))*
   * Technical Spec: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (EN) ↔ [`docs/ARCHITECTURE.pt-BR.md`](docs/ARCHITECTURE.pt-BR.md) (PT-BR)
 * **Strict Truthfulness & Scope Discipline:** Update `docs/context.md` / `docs/context.pt-BR.md` organically when milestones are verified. Clearly separate **benchmarked / implemented layers** (Layer 1 STT + GE2E 256-D CPU voice biometrics, Layer 2 9-question `/v1/systemone` router + 36-case benchmark, Layer 3 Multi-Brain 5-prompt engine + 9 Alexa-style skills + SQLite Knowledge Graph with 12-case `benchmark_grafo.py` + Edge/Piper TTS + Webcam `YuNet+SFace`, and Web UIs `ui_peteleco`, `studio_prompt`, `arena_prompts`) from **sister-repo physical modules** (`Rover` hardware/firmware/UDP) and the **remaining live UDP/serial motor dispatch bridge**.
 * **Communication Style:** Practical, concise, step-by-step maker/engineering tone (matching the user's preferred language in conversation, keeping code/commits/docs spotless).
