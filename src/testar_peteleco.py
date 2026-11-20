@@ -40,7 +40,13 @@ if str(ROOT_DIR) not in sys.path:
 from src.escuta_stt import EscutaSTT
 from src.memoria_pessoas import GerenciadorMemoriaPessoas, normalizar_chave
 from src.persona_peteleco import EstadoCorporal, MotorPersonaPETeleco, parece_pedido_visual
-from src.router_systemone import ContextoRover, DecisaoRoteador, RoteadorSystemOne
+from src.router_systemone import (
+    DEFAULT_OLLAMA_URL,
+    ContextoRover,
+    DecisaoRoteador,
+    RoteadorSystemOne,
+    normalizar_ollama_url,
+)
 from src.tts_local import DEFAULT_EDGE_VOICE, DEFAULT_PIPER_VOICE, SintetizadorTTS
 from src.visao_webcam import WebcamLive
 from src.voz_biometria import IdentificadorVoz
@@ -93,6 +99,29 @@ def _verificar_jev(roteador: RoteadorSystemOne) -> tuple[bool, str]:
         return False, "offline"
 
 
+def _encontrar_ollama_bin() -> Optional[str]:
+    """Localiza o executavel do Ollama no PATH ou instalacao portatil no Windows."""
+    candidatos = [
+        os.environ.get("OLLAMA_BIN", "").strip(),
+        shutil.which("ollama") or "",
+        r"C:\Ollama\ollama.exe",
+    ]
+    local_app = os.environ.get("LOCALAPPDATA", "").strip()
+    if local_app:
+        candidatos.append(str(Path(local_app) / "Programs" / "Ollama" / "ollama.exe"))
+
+    for cand in candidatos:
+        if not cand:
+            continue
+        p = Path(cand)
+        if p.is_file():
+            return str(p)
+        resolved = shutil.which(cand)
+        if resolved:
+            return resolved
+    return None
+
+
 def garantir_ollama_local(
     roteador: RoteadorSystemOne,
     timeout_s: float = 12.0,
@@ -106,22 +135,23 @@ def garantir_ollama_local(
     if host not in ("localhost", "127.0.0.1", "0.0.0.0", "::1"):
         return False, "offline", None
 
-    ollama_bin = shutil.which("ollama")
+    ollama_bin = _encontrar_ollama_bin()
     if not ollama_bin:
         return False, "offline", None
 
     env = os.environ.copy()
+    popen_kwargs: Dict[str, Any] = {
+        "env": env,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+        "start_new_session": True,
+    }
     if sys.platform.startswith("win"):
-        env.setdefault("OLLAMA_VULKAN", "0")
+        env["OLLAMA_VULKAN"] = "0"
+        popen_kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
     try:
-        proc = subprocess.Popen(
-            [ollama_bin, "serve"],
-            env=env,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
+        proc = subprocess.Popen([ollama_bin, "serve"], **popen_kwargs)
     except Exception:
         return False, "offline", None
 
@@ -271,6 +301,10 @@ def _decisao_para_dict(dec: Optional[DecisaoRoteador]) -> Optional[Dict[str, Any
         "dirigido_ao_robo": round(float(dec.dirigido_ao_robo), 4),
         "requer_confirmacao": bool(dec.requer_confirmacao),
         "precisa_imagem_camera": bool(dec.precisa_imagem_camera),
+        "cerebro_sugerido": dec.cerebro_sugerido,
+        "confianca_cerebro": round(float(dec.confianca_cerebro), 4),
+        "skill_sugerida": dec.skill_sugerida,
+        "confianca_skill": round(float(dec.confianca_skill), 4),
         "latencia_ms": round(float(dec.latencia_ms), 1),
         "respostas_brutas": dec.respostas_brutas,
     }
@@ -564,6 +598,8 @@ def executar_turno_detalhado(
                 print(
                     f"[JEV {decisao_jev.latencia_ms:.1f} ms] rota={decisao_jev.rota_final}:{decisao_jev.subtipo} "
                     f"(conf={decisao_jev.confianca:.2f}, dir={decisao_jev.dirigido_ao_robo:.2f}, "
+                    f"cerebro={decisao_jev.cerebro_sugerido}({decisao_jev.confianca_cerebro:.2f}), "
+                    f"skill={decisao_jev.skill_sugerida}({decisao_jev.confianca_skill:.2f}), "
                     f"confirmar={decisao_jev.requer_confirmacao}, img={decisao_jev.precisa_imagem_camera})"
                 )
                 _emit("jev", decisao=_decisao_para_dict(decisao_jev))
@@ -608,11 +644,13 @@ def executar_turno_detalhado(
         voice_id=voice_id,
         voice_conf=voice_conf,
         imagem_jpeg_b64=imagem_para_llm,
+        reproduzir_sfx=tts_ativo,
     )
     tempos_ms["persona_ms"] = round((time.perf_counter() - t0_persona) * 1000.0, 1)
     print(
         f"[CONTEXTO] pessoa={resultado['pessoa_display']} | id={resultado['modo_identificacao']} "
-        f"| modo={resultado['modo_persona']} | origem={resultado['origem']}"
+        f"| modo={resultado['modo_persona']} | cerebro={resultado.get('cerebro_id') or '-'} "
+        f"| skill={resultado.get('skill_executada') or '-'} | origem={resultado['origem']}"
     )
 
     tts_backend = ""
@@ -765,7 +803,7 @@ def main() -> None:
     parser.add_argument("--limiar-mic", type=float, default=0.012, help="Limiar RMS do VAD do microfone (padrao: 0.012)")
     parser.add_argument("--superficie", choices=["chao", "bancada", "no_colo"], default="chao")
     parser.add_argument("--pessoa", default="auto", help="Pessoa simulada no SFace inicial (padrao: auto)")
-    parser.add_argument("--ollama-url", default="http://localhost:11434")
+    parser.add_argument("--ollama-url", default=DEFAULT_OLLAMA_URL)
     args = parser.parse_args()
 
     if args.ui:
@@ -778,6 +816,7 @@ def main() -> None:
     if whisper_modelo == "auto":
         whisper_modelo = "small"
 
+    ollama_url = normalizar_ollama_url(args.ollama_url)
     memoria = GerenciadorMemoriaPessoas()
     voz_bio = IdentificadorVoz()
     stt = EscutaSTT(
@@ -787,8 +826,8 @@ def main() -> None:
         stt_modo=args.stt_modo,
     )
     estado = EstadoCorporal(superficie=args.superficie)
-    motor = MotorPersonaPETeleco(memoria=memoria, estado=estado, ollama_url=args.ollama_url)
-    roteador = RoteadorSystemOne(base_url=args.ollama_url)
+    motor = MotorPersonaPETeleco(memoria=memoria, estado=estado, ollama_url=ollama_url)
+    roteador = RoteadorSystemOne(base_url=ollama_url)
     tts = SintetizadorTTS(voice_name=args.piper_voz, tts_modo=args.tts_modo, edge_voice=args.tts_voz)
     escuta_ativa_ctrl = EstadoEscutaAtiva(exigir_wake_continuo=not args.sem_wake_word)
 
@@ -1107,7 +1146,7 @@ def main() -> None:
     finally:
         if webcam is not None:
             webcam.fechar()
-        if ollama_proc is not None:
+        if ollama_proc is not None and not sys.platform.startswith("win"):
             try:
                 ollama_proc.terminate()
             except Exception:

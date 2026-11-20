@@ -32,7 +32,8 @@ if str(ROOT_DIR) not in sys.path:
 from src.escuta_stt import EscutaSTT
 from src.memoria_pessoas import GerenciadorMemoriaPessoas
 from src.persona_peteleco import EstadoCorporal, MotorPersonaPETeleco
-from src.router_systemone import ContextoRover, RoteadorSystemOne
+from src.router_systemone import DEFAULT_OLLAMA_URL, ContextoRover, RoteadorSystemOne, normalizar_ollama_url
+from src.studio_prompt import abrir_servidor_porta_livre
 from src.testar_peteleco import (
     EstadoEscutaAtiva,
     _estado_para_modo_jev,
@@ -72,7 +73,7 @@ class EstadoSessaoUI:
         limiar_mic: float = 0.012,
         superficie: str = "chao",
         pessoa: str = "auto",
-        ollama_url: str = "http://localhost:11434",
+        ollama_url: str = DEFAULT_OLLAMA_URL,
         auto_ollama: bool = True,
     ) -> None:
         if whisper_modelo == "auto":
@@ -94,10 +95,18 @@ class EstadoSessaoUI:
             device_index=mic_idx,
             stt_modo=stt_modo,
         )
+        ollama_url_norm = normalizar_ollama_url(ollama_url)
         self.estado = EstadoCorporal(superficie=superficie)
-        self.motor = MotorPersonaPETeleco(memoria=self.memoria, estado=self.estado, ollama_url=ollama_url)
-        self.roteador = RoteadorSystemOne(base_url=ollama_url)
+        self.motor = MotorPersonaPETeleco(memoria=self.memoria, estado=self.estado, ollama_url=ollama_url_norm)
+        self.roteador = RoteadorSystemOne(
+            base_url=ollama_url_norm,
+            criterios_cerebros=self.motor.cerebros.construir_criterios_jev(),
+            criterios_skills=self.motor.skills.construir_criterios_jev(),
+        )
         self.tts = SintetizadorTTS(voice_name=piper_voz, tts_modo=tts_modo, edge_voice=tts_voz)
+        sk_timer = self.motor.skills.obter("timer")
+        if sk_timer is not None and hasattr(sk_timer, "definir_callback"):
+            sk_timer.definir_callback(self._ao_disparar_timer)
         self.escuta_ativa_ctrl = EstadoEscutaAtiva(
             janela_s=60.0,
             exigir_wake_continuo=bool(exigir_wake_continuo),
@@ -152,6 +161,16 @@ class EstadoSessaoUI:
             target=self._loop_telemetria, name="peteleco-ui-telemetry", daemon=True
         )
         self._telemetry_thread.start()
+
+    def _ao_disparar_timer(self, alerta: Dict[str, Any]) -> None:
+        msg = str(alerta.get("mensagem") or "Ei, o timer acabou!")
+        self._adicionar_log("OK", "TIMER", msg)
+        self.emit("timer_alert", alerta)
+        if self.tts_ativo:
+            try:
+                self.tts.falar(msg)
+            except Exception:
+                pass
 
     def _resumo_boot(self) -> str:
         cam_str = "webcam ON" if (self.webcam and self.webcam.disponivel) else "webcam OFF"
@@ -287,6 +306,9 @@ class EstadoSessaoUI:
                 "trava_bancada": self.estado.superficie in ("bancada", "no_colo"),
             },
             "modo_persona": self.motor.modo_persona,
+            "cerebro_forcado": self.motor.cerebro_forcado,
+            "cerebros": [c.para_dict() for c in self.motor.cerebros.listar()],
+            "skills": self.motor.skills.listar(),
             "escuta_ativa": {
                 "ativo": self.escuta_ativa_ctrl.esta_ativa(),
                 "restante_s": self.escuta_ativa_ctrl.restante_s(),
@@ -495,6 +517,26 @@ class EstadoSessaoUI:
             self.motor.modo_persona = str(dados["modo_persona"])
             self._adicionar_log("INFO", "MODO", f"Modo da persona ajustado para {self.motor.modo_persona}.")
 
+        if "cerebro_forcado" in dados:
+            val_cer = str(dados["cerebro_forcado"] or "").strip().lower()
+            validos = {c.id for c in self.motor.cerebros.listar()}
+            if val_cer in ("", "auto", "nenhum"):
+                self.motor.cerebro_forcado = ""
+                self._adicionar_log("INFO", "CEREBRO", "Roteamento de cérebro em modo AUTOMÁTICO (Jev).")
+            elif val_cer in validos:
+                self.motor.cerebro_forcado = val_cer
+                self._adicionar_log("INFO", "CEREBRO", f"Cérebro fixado manualmente em '{val_cer}'.")
+
+        if "skill_toggle" in dados and isinstance(dados["skill_toggle"], dict):
+            sk_id = str(dados["skill_toggle"].get("id") or "").strip().lower()
+            hab = bool(dados["skill_toggle"].get("habilitada", True))
+            if self.motor.skills.configurar_habilitada(sk_id, hab):
+                self.roteador.atualizar_criterios_modulares(
+                    criterios_cerebros=self.motor.cerebros.construir_criterios_jev(),
+                    criterios_skills=self.motor.skills.construir_criterios_jev(),
+                )
+                self._adicionar_log("INFO", "SKILL", f"Skill '{sk_id}' {'ATIVADA' if hab else 'DESATIVADA'}.")
+
         if "tts_ativo" in dados:
             self.tts_ativo = bool(dados["tts_ativo"])
             self._adicionar_log("INFO", "TTS", f"Saida de voz {'ATIVADA' if self.tts_ativo else 'DESATIVADA'}.")
@@ -614,7 +656,7 @@ class EstadoSessaoUI:
             self._continuo_thread.join(timeout=2.0)
         if self.webcam is not None:
             self.webcam.fechar()
-        if self.ollama_proc is not None:
+        if self.ollama_proc is not None and not sys.platform.startswith("win"):
             try:
                 self.ollama_proc.terminate()
             except Exception:
@@ -808,17 +850,7 @@ def criar_handler(sessao: EstadoSessaoUI):
 
 
 def _iniciar_servidor_http(sessao: EstadoSessaoUI, porta_inicial: int) -> tuple[ThreadingHTTPServer, int]:
-    handler_cls = criar_handler(sessao)
-    for porta in range(int(porta_inicial), int(porta_inicial) + 15):
-        try:
-            srv = ThreadingHTTPServer(("127.0.0.1", porta), handler_cls)
-            srv.daemon_threads = True
-            return srv, porta
-        except OSError:
-            continue
-    srv = ThreadingHTTPServer(("127.0.0.1", 0), handler_cls)
-    srv.daemon_threads = True
-    return srv, int(srv.server_address[1])
+    return abrir_servidor_porta_livre(criar_handler(sessao), host="127.0.0.1", porta_inicial=porta_inicial)
 
 
 def executar_ui(args: argparse.Namespace) -> None:
@@ -843,7 +875,7 @@ def executar_ui(args: argparse.Namespace) -> None:
         limiar_mic=getattr(args, "limiar_mic", 0.012),
         superficie=getattr(args, "superficie", "chao"),
         pessoa=getattr(args, "pessoa", "auto"),
-        ollama_url=getattr(args, "ollama_url", "http://localhost:11434"),
+        ollama_url=normalizar_ollama_url(getattr(args, "ollama_url", DEFAULT_OLLAMA_URL)),
         auto_ollama=getattr(args, "auto_ollama", True),
     )
 
@@ -856,7 +888,7 @@ def executar_ui(args: argparse.Namespace) -> None:
     print(f"Roteador: {sessao.roteador_modo} | Jev={'ONLINE (' + sessao.jev_versao + ')' if sessao.jev_online else 'OFFLINE'}")
     print(f"STT    : {sessao.stt.descrever_backend()}")
     print(f"TTS    : {'ON' if sessao.tts_ativo else 'OFF'} ({sessao.tts.descrever_backend()})")
-    print("Pressione Ctrl+C neste terminal para encerrar.")
+    print("Pressione Ctrl+C neste terminal para encerrar.", flush=True)
 
     if not getattr(args, "sem_browser", False):
         threading.Timer(0.45, lambda: webbrowser.open(url)).start()
@@ -891,7 +923,7 @@ def main() -> None:
     parser.add_argument("--limiar-mic", type=float, default=0.012, help="Limiar RMS do VAD do microfone")
     parser.add_argument("--superficie", choices=["chao", "bancada", "no_colo"], default="chao")
     parser.add_argument("--pessoa", default="auto", help="Pessoa simulada inicial (padrao: auto)")
-    parser.add_argument("--ollama-url", default="http://localhost:11434")
+    parser.add_argument("--ollama-url", default=DEFAULT_OLLAMA_URL)
     args = parser.parse_args()
     args.ui_tts_padrao = True
     args.auto_ollama = not args.sem_auto_ollama

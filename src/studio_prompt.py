@@ -26,6 +26,7 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+from src.cerebros import GerenciadorCerebros, extrair_few_shot_dialogo
 from src.memoria_pessoas import GerenciadorMemoriaPessoas, ROOT_DIR as MEM_ROOT_DIR, carregar_env
 from src.persona_peteleco import (
     DEFAULT_PROMPT_PATH,
@@ -33,17 +34,24 @@ from src.persona_peteleco import (
     MotorPersonaPETeleco,
     carregar_system_prompt_base,
 )
+from src.router_systemone import ContextoRover, DEFAULT_OLLAMA_URL, RoteadorSystemOne, normalizar_ollama_url
+from src.skills import ContextoSkill, criar_gerenciador_skills
 
 
 HTML_STUDIO_PATH = Path(__file__).resolve().parent / "static" / "studio_prompt.html"
 
 DEFAULT_GEMINI_MODELS: Tuple[str, ...] = (
     "gemini-3.5-flash-lite",
+    "gemini-flash-lite-latest",
     "gemini-3.1-flash-lite",
-    "gemini-3.5-flash",
-    "gemini-2.5-flash-lite",
-    "gemini-2.5-flash",
 )
+
+_BLOCKED_GEMINI_MODELS = frozenset({
+    "gemini-3.5-flash",
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+    "gemini-3.8-flash",
+})
 
 _PROMPT_BLOCK_RE = re.compile(
     r"(## 3\. System Prompt[^\n]*\n+```text\n)(.*?)(\n```)",
@@ -101,7 +109,7 @@ def listar_modelos_ollama(
 ) -> Tuple[bool, List[str]]:
     """Consulta modelos de chat locais no Ollama (ignorando modelos `tev1` do SystemOne)."""
     sess = session or requests.Session()
-    url = f"{ollama_url.rstrip('/')}/api/tags"
+    url = f"{normalizar_ollama_url(ollama_url)}/api/tags"
     try:
         resp = sess.get(url, timeout=timeout_s)
         resp.raise_for_status()
@@ -389,7 +397,7 @@ def _chamar_ollama_studio(
     }
     t0 = time.perf_counter()
     try:
-        resp = session.post(f"{ollama_url.rstrip('/')}/api/chat", json=payload, timeout=timeout_s)
+        resp = session.post(f"{normalizar_ollama_url(ollama_url)}/api/chat", json=payload, timeout=timeout_s)
         latency_ms = (time.perf_counter() - t0) * 1000.0
         resp.raise_for_status()
     except requests.RequestException as exc:
@@ -424,11 +432,19 @@ class StudioPromptApp:
         *,
         prompt_path: Optional[Path] = None,
         perfis_path: Optional[Path] = None,
-        ollama_url: str = "http://localhost:11434",
+        ollama_url: str = DEFAULT_OLLAMA_URL,
+        cerebros_dir: Optional[Path] = None,
     ) -> None:
         self.prompt_path = Path(prompt_path or DEFAULT_PROMPT_PATH)
         self.memoria = GerenciadorMemoriaPessoas(perfis_path=perfis_path)
-        self.ollama_url = ollama_url.rstrip("/")
+        self.ollama_url = normalizar_ollama_url(ollama_url)
+        self.cerebros = GerenciadorCerebros(diretorio=cerebros_dir)
+        self.skills = criar_gerenciador_skills(sqlite_path=self.memoria.sqlite_path, dry_run_os=False)
+        self.roteador = RoteadorSystemOne(
+            base_url=self.ollama_url,
+            criterios_cerebros=self.cerebros.construir_criterios_jev(),
+            criterios_skills=self.skills.construir_criterios_jev(),
+        )
         self._env = carregar_env()
         self._session = requests.Session()
 
@@ -439,13 +455,14 @@ class StudioPromptApp:
         modelos: List[str] = []
         for cand in (
             self._env.get("GEMINI_PERSONA_MODEL", ""),
+            "gemini-3.5-flash-lite",
             self._env.get("GEMINI_MODEL", ""),
             *DEFAULT_GEMINI_MODELS,
         ):
             m = cand.strip()
-            if m and m not in modelos:
+            if m and m not in _BLOCKED_GEMINI_MODELS and m not in modelos:
                 modelos.append(m)
-        return modelos
+        return modelos or list(DEFAULT_GEMINI_MODELS)
 
     def _listar_perfis_ui(self) -> List[Dict[str, Any]]:
         ordem_prioridade = ["caio", "felipe_sass", "desconhecido"]
@@ -504,12 +521,15 @@ class StudioPromptApp:
             "ollama_url": self.ollama_url,
             "ollama_models": ollama_models,
             "perfis": self._listar_perfis_ui(),
+            "cerebros": [c.para_dict() for c in self.cerebros.listar()],
+            "skills": self.skills.listar(),
             "defaults": {
                 "provider": default_provider,
                 "model": default_model,
-                "temperature": 0.85,
+                "temperature": 1.0,
                 "max_tokens": 320,
                 "incluir_contexto": True,
+                "cerebro_modo": "auto_jev",
                 "pessoa_id": pessoa_padrao,
                 "modo_persona": "NORMAL",
                 "identificacao": "rosto+voz",
@@ -522,12 +542,27 @@ class StudioPromptApp:
         prompt_base = str(dados.get("prompt_base") or "")
         incluir_contexto = bool(dados.get("incluir_contexto", True))
         contexto_cfg = dados.get("contexto") if isinstance(dados.get("contexto"), dict) else {}
-        system_inst, modo_efetivo = montar_system_instruction_completa(
-            prompt_base=prompt_base,
-            incluir_contexto=incluir_contexto,
-            contexto_cfg=contexto_cfg,
-            memoria=self.memoria,
-        )
+        cerebro_modo = str(dados.get("cerebro_modo") or "legado").strip().lower()
+        if cerebro_modo not in ("", "legado", "auto_jev"):
+            spec = self.cerebros.obter(cerebro_modo)
+            bloco_ctx, modo_efetivo = montar_system_instruction_completa(
+                prompt_base="",
+                incluir_contexto=incluir_contexto,
+                contexto_cfg=contexto_cfg,
+                memoria=self.memoria,
+            )
+            spec_efetivo = type(spec)(**{**spec.__dict__, "prompt_base": prompt_base.strip() or spec.prompt_base})
+            system_inst = GerenciadorCerebros.compor_system_instruction(
+                cerebro=spec_efetivo,
+                bloco_contexto=bloco_ctx,
+            )
+        else:
+            system_inst, modo_efetivo = montar_system_instruction_completa(
+                prompt_base=prompt_base,
+                incluir_contexto=incluir_contexto,
+                contexto_cfg=contexto_cfg,
+                memoria=self.memoria,
+            )
         chars = len(system_inst)
         return {
             "ok": True,
@@ -541,15 +576,16 @@ class StudioPromptApp:
         prompt_base = str(dados.get("prompt_base") or "")
         incluir_contexto = bool(dados.get("incluir_contexto", True))
         contexto_cfg = dados.get("contexto") if isinstance(dados.get("contexto"), dict) else {}
+        cerebro_modo = str(dados.get("cerebro_modo") or "legado").strip().lower()
         provider = str(dados.get("provider") or "gemini").strip().lower()
         model = str(dados.get("model") or "").strip()
         raw_messages = dados.get("messages")
         messages = raw_messages if isinstance(raw_messages, list) else []
 
         try:
-            temperature = float(dados.get("temperature", 0.85))
+            temperature = float(dados.get("temperature", 1.0))
         except (TypeError, ValueError):
-            temperature = 0.85
+            temperature = 1.0
         temperature = min(2.0, max(0.0, temperature))
 
         try:
@@ -558,12 +594,131 @@ class StudioPromptApp:
             max_tokens = 320
         max_tokens = min(2048, max(32, max_tokens))
 
-        system_inst, modo_efetivo = montar_system_instruction_completa(
-            prompt_base=prompt_base,
-            incluir_contexto=incluir_contexto,
-            contexto_cfg=contexto_cfg,
-            memoria=self.memoria,
-        )
+        cerebro_id_usado = ""
+        cerebro_nome_usado = ""
+        cerebro_motivo = ""
+        skill_executada = ""
+        jev_ms = 0.0
+        messages_modelo = list(messages)
+
+        # Modo Multi-Cérebro (Auto via Jev ou cérebro específico de prompts/cerebros/*.md)
+        if cerebro_modo and cerebro_modo != "legado":
+            pessoa_id = str(contexto_cfg.get("pessoa_id") or "desconhecido").strip() or "desconhecido"
+            perfil = self.memoria.obter_perfil(pessoa_id)
+            modo_req = str(contexto_cfg.get("modo_persona") or "NORMAL").strip().upper()
+            eh_formal = perfil.get("papel") == "professor_orientador" or modo_req == "SERIO"
+            modo_efetivo = "SERIO" if eh_formal else modo_req
+
+            ultima_fala = ""
+            for m in reversed(messages):
+                if isinstance(m, dict) and str(m.get("role", "")).lower() == "user":
+                    ultima_fala = str(m.get("text") or "").strip()
+                    break
+
+            dec_jev = None
+            dados_skill = ""
+            if cerebro_modo == "auto_jev" and ultima_fala:
+                try:
+                    dec_jev = self.roteador.decidir(
+                        ContextoRover(transcricao=ultima_fala, modo_escuta_ativa=True),
+                        timeout_override_s=5.0,
+                    )
+                    jev_ms = round(float(dec_jev.latencia_ms), 1)
+                except Exception:
+                    dec_jev = None
+
+                # Avalia skills modulares no modo Auto (Jev)
+                sk_id = None
+                if dec_jev is not None:
+                    if dec_jev.rota_final == "fala_parametrizada" and dec_jev.subtipo == "previsao_clima":
+                        sk_id = "clima"
+                    elif dec_jev.skill_sugerida != "nenhuma" and dec_jev.confianca_skill >= 0.55:
+                        cand_sk = dec_jev.skill_sugerida
+                        sk_obj = self.skills.obter(cand_sk)
+                        if not (
+                            cand_sk == "clima"
+                            and dec_jev.rota_final == "cognicao_gemini"
+                            and sk_obj is not None
+                            and not sk_obj.pode_atender_local(ultima_fala)
+                        ):
+                            sk_id = cand_sk
+                if not sk_id:
+                    sk_id = self.skills.detectar_skill_local(ultima_fala)
+
+                if sk_id:
+                    res_sk = self.skills.executar(
+                        sk_id,
+                        ContextoSkill(
+                            transcricao=ultima_fala,
+                            pessoa_id=pessoa_id,
+                            pessoa_nome=str(perfil.get("nome") or "desconhecido"),
+                            modo_persona=modo_efetivo,
+                            eh_formal=eh_formal,
+                            memoria=self.memoria,
+                        ),
+                    )
+                    if res_sk is not None:
+                        skill_executada = res_sk.skill_id
+                        if not res_sk.precisa_llm and res_sk.resposta_direta:
+                            return 200, {
+                                "ok": True,
+                                "reply": res_sk.resposta_direta,
+                                "provider": f"skill:{res_sk.skill_id}",
+                                "model": "local_skill",
+                                "latency_ms": jev_ms,
+                                "jev_ms": jev_ms,
+                                "modo_efetivo": modo_efetivo,
+                                "cerebro_id": "utilitario",
+                                "cerebro_nome": "Skill Direta (0 ms LLM)",
+                                "cerebro_motivo": f"skill_direta:{res_sk.skill_id}",
+                                "skill_executada": skill_executada,
+                                "usage": {"prompt_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+                            }
+                        dados_skill = res_sk.resumo_contexto
+
+                spec, cerebro_motivo = self.cerebros.resolver_cerebro(
+                    modo_persona=modo_req,
+                    perfil=perfil,
+                    cerebro_jev=dec_jev.cerebro_sugerido if dec_jev else "",
+                    confianca_jev=dec_jev.confianca_cerebro if dec_jev else 0.0,
+                    tem_dados_skill=bool(dados_skill),
+                )
+                temperature = spec.temperature
+                max_tokens = spec.max_tokens
+                prompt_ativo = spec.prompt_base
+            else:
+                spec = self.cerebros.obter(cerebro_modo)
+                cerebro_motivo = f"studio_pin:{spec.id}"
+                prompt_ativo = prompt_base.strip() or spec.prompt_base
+
+            cerebro_id_usado = spec.id
+            cerebro_nome_usado = spec.nome
+            bloco_ctx, modo_efetivo = montar_system_instruction_completa(
+                prompt_base="",
+                incluir_contexto=incluir_contexto,
+                contexto_cfg=contexto_cfg,
+                memoria=self.memoria,
+            )
+            spec_efetivo = type(spec)(**{**spec.__dict__, "prompt_base": prompt_ativo})
+            _, pares_fs = extrair_few_shot_dialogo(prompt_ativo)
+            if pares_fs:
+                prefixo_fs: List[Dict[str, Any]] = []
+                for u_ex, a_ex in pares_fs:
+                    prefixo_fs.append({"role": "user", "text": u_ex})
+                    prefixo_fs.append({"role": "assistant", "text": a_ex})
+                messages_modelo = prefixo_fs + messages_modelo
+            system_inst = GerenciadorCerebros.compor_system_instruction(
+                cerebro=spec_efetivo,
+                bloco_contexto=bloco_ctx,
+                dados_skill=dados_skill,
+            )
+        else:
+            system_inst, modo_efetivo = montar_system_instruction_completa(
+                prompt_base=prompt_base,
+                incluir_contexto=incluir_contexto,
+                contexto_cfg=contexto_cfg,
+                memoria=self.memoria,
+            )
 
         if provider == "gemini":
             api_key = self._api_key()
@@ -572,14 +727,14 @@ class StudioPromptApp:
                     "ok": False,
                     "error": "GEMINI_API_KEY nao configurada no .env (ou alterne para Ollama local).",
                 }
-            if not model:
+            if not model or model in _BLOCKED_GEMINI_MODELS:
                 model = self._listar_modelos_gemini()[0]
             res = _chamar_gemini_studio(
                 session=self._session,
                 api_key=api_key,
                 model=model,
                 system_inst=system_inst,
-                messages=messages,
+                messages=messages_modelo,
                 temperature=temperature,
                 max_tokens=max_tokens,
             )
@@ -600,7 +755,7 @@ class StudioPromptApp:
                 ollama_url=self.ollama_url,
                 model=model,
                 system_inst=system_inst,
-                messages=messages,
+                messages=messages_modelo,
                 temperature=temperature,
                 max_tokens=max_tokens,
             )
@@ -612,6 +767,11 @@ class StudioPromptApp:
 
         res["modo_efetivo"] = modo_efetivo
         res["system_instruction"] = system_inst
+        res["cerebro_id"] = cerebro_id_usado
+        res["cerebro_nome"] = cerebro_nome_usado
+        res["cerebro_motivo"] = cerebro_motivo
+        res["skill_executada"] = skill_executada
+        res["jev_ms"] = jev_ms
         return 200, res
 
 
@@ -655,6 +815,10 @@ def servir_html_arquivo(handler: BaseHTTPRequestHandler, html_path: Path) -> Non
     handler.wfile.write(html)
 
 
+class _ThreadingHTTPServerExclusivo(ThreadingHTTPServer):
+    allow_reuse_address = not sys.platform.startswith("win")
+
+
 def abrir_servidor_porta_livre(
     handler_cls: Any,
     host: str = "127.0.0.1",
@@ -665,12 +829,12 @@ def abrir_servidor_porta_livre(
     if base_porta > 0:
         for porta in range(base_porta, base_porta + 15):
             try:
-                srv = ThreadingHTTPServer((host, porta), handler_cls)
+                srv = _ThreadingHTTPServerExclusivo((host, porta), handler_cls)
                 srv.daemon_threads = True
                 return srv, int(srv.server_address[1])
             except OSError:
                 continue
-    srv = ThreadingHTTPServer((host, 0), handler_cls)
+    srv = _ThreadingHTTPServerExclusivo((host, 0), handler_cls)
     srv.daemon_threads = True
     return srv, int(srv.server_address[1])
 
@@ -731,6 +895,36 @@ def criar_handler(app: StudioPromptApp):
                 )
                 return
 
+            if caminho == "/api/cerebro/save":
+                cid = str(dados.get("cerebro_id") or "").strip().lower()
+                novo = str(dados.get("prompt_base") or "")
+                temp = dados.get("temperature")
+                max_tok = dados.get("max_tokens")
+                try:
+                    spec = app.cerebros.salvar_prompt_cerebro(
+                        cid,
+                        novo,
+                        temperature=float(temp) if temp is not None else None,
+                        max_tokens=int(max_tok) if max_tok is not None else None,
+                    )
+                    app.roteador.atualizar_criterios_modulares(
+                        criterios_cerebros=app.cerebros.construir_criterios_jev(),
+                        criterios_skills=app.skills.construir_criterios_jev(),
+                    )
+                except Exception as exc:
+                    enviar_json_http(self, {"ok": False, "error": str(exc)}, status=400)
+                    return
+                enviar_json_http(
+                    self,
+                    {
+                        "ok": True,
+                        "cerebro": spec.para_dict(),
+                        "cerebros": [c.para_dict() for c in app.cerebros.listar()],
+                        "message": f"Cérebro '{spec.nome}' salvo em {spec.path.name if spec.path else spec.id + '.md'}.",
+                    },
+                )
+                return
+
             enviar_json_http(self, {"erro": "Rota POST nao encontrada."}, status=404)
 
     return StudioPromptHandler
@@ -752,7 +946,7 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1", help="Host HTTP (padrao: 127.0.0.1)")
     parser.add_argument("--porta", type=int, default=8770, help="Porta HTTP inicial (padrao: 8770)")
     parser.add_argument("--sem-browser", action="store_true", help="Nao abre o navegador automaticamente")
-    parser.add_argument("--ollama-url", default="http://localhost:11434", help="URL do Ollama local")
+    parser.add_argument("--ollama-url", default=DEFAULT_OLLAMA_URL, help="URL do Ollama local")
     parser.add_argument(
         "--prompt-path",
         type=Path,
@@ -775,7 +969,7 @@ def main() -> None:
         f"Ollama : {'ONLINE (' + ', '.join(estado['ollama_models']) + ')' if estado['ollama_online'] and estado['ollama_models'] else ('ONLINE (sem modelo de chat)' if estado['ollama_online'] else 'OFFLINE')}"
     )
     print("Modo   : Puro text-to-text (sem webcam, mic/STT, TTS ou escrita em memoria).")
-    print("Pressione Ctrl+C neste terminal para encerrar.")
+    print("Pressione Ctrl+C neste terminal para encerrar.", flush=True)
 
     if not args.sem_browser:
         threading_timer = threading.Timer(0.4, lambda: webbrowser.open(url))

@@ -45,7 +45,7 @@ UDP Camera ─▶ YuNet+SFace / YOLOv8n / Rover State ──▶ ContextoRover.fo
 
 ## 3. Layer 2 Protocol: Ollama `POST /v1/systemone` Contract
 
-Rather than generating free-form JSON text tokens with an LLM, **PETeleco** uses the Jev-based **`/v1/systemone`** endpoint exposed by Ollama (`>= v0.35`, verified on `v0.40.16`) with **`tev1:0.8b`** (`keep_alive=-1`). It evaluates `state` against **7 typed parallel questions** in a single inference pass.
+Rather than generating free-form JSON text tokens with an LLM, **PETeleco** uses the Jev-based **`/v1/systemone`** endpoint exposed by Ollama (`>= v0.35`, verified on `v0.40.16`) with **`tev1:0.8b`** (`keep_alive=-1`). It evaluates `state` against **9 typed parallel questions** (7 core routing/safety questions + dynamic Multi-Brain & Modular Skills routing) in a single inference pass.
 
 ### 3.1 Structured `state` Input (`ContextoRover.formatar_state()`)
 ```text
@@ -66,6 +66,27 @@ LOCAL_OBJECTS_SEEN (YOLO): <e.g. person, bottle>
 | `acao_rover` | `choice` | `seguir_rosto`, `ir_ate_objeto`, `parar`, `radar`, `nenhuma` |
 | `cognicao_gemini` | `choice` | `descrever_cena`, `conversa_aberta`, `nenhuma` |
 | `precisa_imagem_camera` | `noul` | Scalar probability `[0..1]` that live camera frame is required |
+| `cerebro_persona` | `choice` | Dynamic Jev routing across specialized brain prompts (`resenha`, `desgracado`, `tecnico`, `serio`, `utilitario`) |
+| `skill_modular` | `choice` | Dynamic Jev routing across 9 pluggable skills (`clima`, `musica`, `noticias`, `recados`, `timer`, `busca_web`, `sonoplastia`, `listas`, `rotinas`, `nenhuma`) |
+
+### 3.3 Modular Multi-Brain & Pluggable Skills Layer (`src/cerebros.py`, `src/skills/`)
+- **Multi-Brain Prompts (`prompts/cerebros/*.md`):** Instead of a single monolithic prompt with conflicting mode rules, each persona version (`resenha`, `desgracado`, `tecnico`, `serio`, `utilitario`) is a standalone `.md` file with frontmatter (`temperature`, `max_tokens`, `criterio_jev`, `bloqueado_para_professor`) and real `user`/`model` dialogue examples (`=== FEW_SHOT_DIALOGO ===`). `GerenciadorCerebros.resolver_cerebro()` enforces hard deterministic safety locks (e.g., `professor_orientador` and `SERIO` ALWAYS lock to `serio`) on top of Jev's probabilistic `cerebro_persona` distribution, reducing prompt dilution and cutting input tokens per turn.
+- **9 Alexa-Style Modular Skills (`src/skills/`):** Pluggable skills (`clima` via Open-Meteo Niterói, headless ad-free `musica`, `noticias` via RSS, `recados` in SQLite with automatic face/voice delivery, background `timer`, free `busca_web`, `sonoplastia` with `.wav` SFX + anti-cringe cooldown, `listas` persisted in graph memory, and `rotinas` `"bom_dia"`/`"modo_estudo"`) dynamically register their `criterio_jev` into `RoteadorSystemOne` and execute deterministically (`0 ms` LLM) or inject verified `DADOS_SKILL` into `utilitario` / `serio`.
+
+### 3.4 Embedded Knowledge Graph Memory (`src/grafo_memoria.py`, `src/benchmark_grafo.py`)
+- **`GrafoMemoriaSQLite` (`data/memoria_longa.sqlite`):** Stores normalized entities (`grafo_nos`) and typed directional relations (`grafo_arestas`: e.g. `estuda`, `cursa`, `mora_em`, `trabalha_em`, `usa`, `gosta_de`, `evita`, `lista_item`) using `contextlib.closing` for lock-safe SQLite I/O.
+- **Token-Light Subgraph Retrieval:** Before calling Gemini, `buscar_subgrafo()` retrieves a **1–2 hop neighborhood** around the recognized speaker (`[MEMÓRIA EM GRAFO RELEVANTE]`), injecting structured facts without inflating system prompts.
+- **12-Case Benchmark (`python -u -m src.benchmark_grafo --modo todos`):**
+
+| Extraction Mode | Precision | Recall | F1 | Latency / Case | Extra Tokens |
+|---|---|---|---|---|---|
+| **`local`** (regex rules + normalization) | **`1.000`** | `0.889` | **`0.941`** | **`0.18 ms`** | **`0`** (`R$ 0`) |
+| **`hibrido`** (`local` + LLM gate on narrative turns) | `0.900` | **`1.000`** | **`0.947`** | `810.57 ms` | `293` |
+| **`llm`** (free-form JSON via `gemini-3.5-flash-lite`) | `0.545` | `0.667` | `0.600` | `9099.92 ms` | `2167` |
+
+### 3.5 Neural CPU Voice Biometrics (`src/voz_biometria.py`) & Headless Audio Ducking (`src/skills/musica.py`)
+- **256-D GE2E Speaker ID (`0 MB` VRAM):** Pure-PyTorch `_GE2EEncoder` (`LSTM(40, 256, 3)` + `Linear(256, 256)` on linear power MelSpectrogram `n_fft=400, hop_length=160, n_mels=40`) loads `models/voice_encoder_ge2e.pt` (`17.1 MB`) on CPU (`torchaudio_192d` kept as backward-compatible fallback). `identificar_detalhado()` computes `estimar_snr_db()` and applies a **2-tier confidence gate** (`>= 0.78` -> `"confirmado"`, `0.65..0.77` -> `"confirmar"` triggering conversational verification in `persona_peteleco.py`, `< 0.65` -> `"desconhecido"`).
+- **Ad-Free Headless Music & Automatic Ducking:** `PlayerMusicaHeadless` resolves queue metadata via `ytmusicapi` (auto-radio), audio streams via `yt-dlp` `scsearch1` (SoundCloud M4A/MP3) and direct `SomaFM` Icecast stations (`lofi`, `eletronica`, `rock`, `ambiente`), decoding and streaming directly through `PyAV + sounddevice` without launching a browser. Hooks in `SintetizadorTTS.falar()` and `EscutaSTT.gravar_microfone()` call `set_music_ducking(True/False)` to smoothly drop playback volume to **`18%`** while listening or speaking.
 
 ---
 
@@ -110,12 +131,28 @@ Deterministic Python rules sit on top of `/v1/systemone` calibrated probabilitie
   - Ollama `v0.40.16` defaults to Vulkan (`OLLAMA_VULKAN=true`), incurring **`14,193.6 ms`** shader compilation on the first call (with preliminary 6-question runs measuring `p50 = 297.9 ms`, `p95 = 321.18 ms`).
   - Launching with **`OLLAMA_VULKAN=0`** forces native **`CUDA0`** (`Flash Attention`), using **`1245.7 MiB`** of VRAM (`/api/ps`). Initial post-boot load on `windows_cuda` takes ~27–45 s because Ollama disables `mmap` on Windows CUDA, after which `keep_alive=-1` keeps inference warm (`min = 306.21 ms`, `mean = 352.85 ms`, **`p50 = 352.54 ms`**, **`p95 = 376.05 ms`**, `max = 491.71 ms`, `n = 72`).
 - **36-Case Verified Accuracy (`src/benchmark_router.py --suite todas --rodadas 2`):**
-  - **20 standard cases + 16 unseen out-of-sample generalization cases** -> `36/36 (100.0%)` main route, `31/31 (100.0%)` subtype, `34/34 (100.0%)` camera-need detection, and **`30/36 (83.3%)`** resolved locally without cloud calls.
+  - **20 standard cases + 16 unseen out-of-sample generalization cases (7 core questions):** `36/36 (100.0%)` main route, `31/31 (100.0%)` subtype, `34/34 (100.0%)` camera-need detection, and `30/36 (83.3%)` resolved locally without cloud calls.
+  - **9-question Multi-Brain + Skills schema (`--rodadas 1`):** Route **`34/36 (94.4%)`**, Subtype **`30/31 (96.8%)`**, Image **`34/34 (100.0%)`**, **`p50 = 388.49 ms`**, VRAM **`1245.7 MiB`** (`+0 MiB` delta).
+
+### 6.1 Complete Hardware & Cloud Quota Footprint Projection
+
+| Subsystem | VRAM (`RTX 3050 8 GB`) | System RAM | CPU / Inference Latency | Disk / Cloud Quota |
+|---|---|---|---|---|
+| **L1 — VAD + `faster-whisper small`** | `~1050–1200 MiB` (`float16` CUDA) / `0 MiB` (`Gemini Audio`) | `~350 MB` | `~350–650 ms` warm CUDA | `~485 MB` |
+| **L1 — Voice Biometrics (`ge2e_256d` CPU)** | **`0 MiB`** | `~45 MB` | `~25–45 ms` / utterance | `17.1 MB` (`voice_encoder_ge2e.pt`) |
+| **L2 — Jev Router `tev1:0.8b` (`CUDA0`)** | **`1245.7 MiB`** (`keep_alive=-1`) | `~400 MB` | **`p50 = 388.49 ms`** (9 parallel questions) | `~810 MB` (`C:\Ollama`) |
+| **L3 — Vision (`YuNet + SFace` OpenCV CPU)** | **`0 MiB`** | `~60 MB` | **`~10.8 ms`** / frame | `~37 MB` |
+| **L3 — Multi-Brain + SQLite Graph + 9 Skills** | **`0 MiB`** | `< 25 MB` | **`0.18 ms`** local extract + `< 1.5 ms` 2-hop query | `< 5 MB` (`~5–10 MB/yr`) |
+| **L3 — Headless Music (`PyAV`) + TTS (`Edge`/`Piper`)** | **`0 MiB`** | `~80 MB` | `< 2%` of 1 core (music) / `~260–400 ms` (Piper) | `~60 MB` (`Piper` + `.wav` SFX) |
+| **L4 — Cloud API (`Gemini 3.5 Flash-Lite` Free Tier)** | `0 MiB` | `~0 MB` | On-demand REST (`0` calls on `~78–83%` of turns) | `~1050–1320` in / `~20–85` out tok/call |
+| **Rover V1 → V2 PCB Power (`Mini 560 5V/5A`)** | — | — | MCU/Telemetry only (AI offloaded to PC) | `~180–260 mA` CAM + V2 `~136 mA` logic + `~150–300 mA` avg `MAX98357A` (`~600 mA` 3W peak) |
+
+- **Total Active PC Resident Usage:** **`~2.3–2.5 GB` VRAM** (`~30%` of RTX 3050 8 GB, leaving ~5.5 GB free) and **`~1.1–1.4 GB` System RAM** (`< 9%` of 16 GB DDR5), using **`~1.4 GB`** local disk.
 
 ---
 
 ## 7. Next Engineering Milestones
 
-1. **Layer 1 Integration:** Local continuous microphone pipeline (`Silero VAD` -> `faster-whisper` CUDA) feeding `ContextoRover`.
-2. **Layer 3 Skills & Persona Voice:** Pre-recorded PETeleco `.wav` audio pool, local deterministic handlers (`hora_atual`, `previsao_clima` cache, simulated/real `bateria_temp`, `quem_vejo_agora`), `Piper TTS` synthesis, and `SQLite` person memory.
-3. **Layer 4 + Embodied Bridge:** Connect `Gemini` multimodal escalation and dispatch confirmed motor/head states to `CaioHVectorA/Rover` over UDP/serial.
+1. **Acoustic Room Validation:** Stress-test real lab room noise against pre-roll VAD, 2-tier `ge2e_256d` speaker checks, and `"PETeleco"` wake-word + `18%` headless music ducking via `python -m src.ui_peteleco`.
+2. **Optional `Silero VAD` Upgrade for Crowded Labs:** Evaluate supplementing the RMS pre-roll gate in `src/escuta_stt.py` with CPU `Silero VAD` if multi-person background chatter triggers unnecessary Standby wakeups.
+3. **Layer 4 + Embodied `Rover` Bridge (UDP + Serial `<C,a,b,c>`):** Dispatch safety-gated router actions and physical table-edge states directly to `CaioHVectorA/Rover` (`port 5005` UDP + V1/V2 chassis UART, plus `I2S`/`OLED` on V2 once fabricated).

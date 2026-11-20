@@ -87,19 +87,20 @@ Designed to keep **all active local models resident inside 8 GB VRAM** (host tar
 
 | Layer | Component / Model | Role | Host / Runtime | Status |
 |---|---|---|---|---|
-| **L1 (Audio)** | `RMS VAD (450 ms pre-roll)` + `Gemini Audio STT` / `faster-whisper` (`small`) + `"PETeleco"` Wake-word | Continuous PT-BR transcription (`Standby <-> 60 s Active Listening`) + `torchaudio_192d` voice ID | Cloud STT / CPU / CUDA (`auto`) | **✅ Implemented & Tested** |
-| **L2 (Router)** | **`tev1:0.8b`** (`772.85M`, `Q8_0`, `/v1/systemone`) + fast `Gemini Flash-Lite` JSON (`auto` CPU) | Parallel `noul`/`choice` routing (`CUDA`) or sub-second JSON triage (`CPU`) | Ollama CUDA (`1245.7 MiB`) / API | **✅ Implemented & Benchmarked** |
-| **L3 (Speech)** | **`Edge Neural TTS`** (`pt-BR-AntonioNeural`) / `Gemini TTS` + **`Piper TTS`** offline fallback | Natural PT-BR conversational speech synthesis via `sounddevice` / Pulse / ALSA | Online Neural / Offline CPU (`~0 GB` VRAM) | **✅ Implemented & Tested** |
-| **L3 (Vision)** | `YuNet` + `SFace` (ONNX, `128-D`) + `WebcamLive` HUD | Face biometric ID (`cosine >= 0.363`) & live `--preview` HUD | Local OpenCV ONNX | **✅ Implemented (`Rover` + `PETeleco`)** |
+| **L1 (Audio)** | `RMS VAD (450 ms pre-roll)` + `Gemini Audio STT` / `faster-whisper` (`small`) + `"PETeleco"` Wake-word | Continuous PT-BR transcription (`Standby <-> 60 s Active Listening`) + **256-D Neural GE2E** (`ge2e_256d`, CPU `0 MB` VRAM, 2-tier SNR-aware speaker check + `192-D` fallback) | Cloud STT / CPU / CUDA (`auto`) | **✅ Implemented & Tested** |
+| **L2 (Router)** | **`tev1:0.8b`** (`772.85M`, `Q8_0`, `/v1/systemone`, **9 parallel questions**) + `Gemini Flash-Lite` JSON (`auto` CPU) | Parallel `noul`/`choice` routing (`+cerebro_persona`, `+skill_modular`) & hard safety locks | Ollama CUDA (`1245.7 MiB`) / API | **✅ Implemented & Benchmarked** |
+| **L3 (Brains & Skills)** | **5 Multi-Brain Prompts** (`resenha`, `desgracado`, `tecnico`, `serio`, `utilitario`) + **9 Alexa-style Skills** | Real `user`/`model` few-shot injection + `clima`, ad-free headless `musica` (**18% audio ducking**), `noticias`, `recados`, `timer`, free `busca_web`, `sonoplastia` (`.wav` SFX), `listas`, `rotinas` | Local Python + `PyAV`/`sounddevice` (`0 MB` VRAM) | **✅ Implemented & Tested** |
+| **L3 (Speech)** | **`Edge Neural TTS`** (`pt-BR-AntonioNeural`) / `Gemini TTS` + **`Piper TTS`** offline fallback | Natural PT-BR conversational speech synthesis via `sounddevice` / Pulse / ALSA | Online Neural / Offline CPU (`0 MB` VRAM) | **✅ Implemented & Tested** |
+| **L3 (Vision)** | `YuNet` + `SFace` (ONNX, `128-D`) + `WebcamLive` HUD | Face biometric ID (`cosine >= 0.363`) & live `--preview` / MJPEG HUD | Local OpenCV ONNX (`0 MB` VRAM) | **✅ Implemented (`Rover` + `PETeleco`)** |
 | **L3 (Vision)** | `YOLOv8n` + `MediaPipe Hands` | Object detection, trekking FSM & gestures | Local Python / ONNX | Validated in `Rover` |
-| **L3 (Memory)** | 3-Tier `SQLite` / `JSON` Store | Hot profile cards & episodic logs per recognized person | Local Disk (`data/`) | **✅ Implemented & Tested** |
-| **L4 (Cloud)** | `Gemini REST` + Ollama `/api/chat` fallback | Scene `Image-to-Text` & open chat with physical safety locks | HTTPS REST API / local | **✅ Implemented (`GEMINI_API_KEY` optional)** |
+| **L3 (Memory)** | **Embedded Knowledge Graph (`GrafoMemoriaSQLite`)** + Hot JSON Cards | 1–2 hop subgraph retrieval (`grafo_nos`/`grafo_arestas` in `memoria_longa.sqlite`), local regex extractor (`F1 = 0.941`, `0.18 ms`, `0` tokens) + hybrid mode (`F1 = 0.947`) | Local Disk (`data/`) (`0 MB` VRAM) | **✅ Implemented & Benchmarked** |
+| **L4 (Cloud)** | `Gemini REST` + Ollama `/api/chat` fallback | Scene `Image-to-Text` & open chat routed by Jev across specialized brains | HTTPS REST API / local | **✅ Implemented (`GEMINI_API_KEY` optional)** |
 
 ---
 
 ## 🔌 Protocols Summary
 
-- **Layer 2 Inference Protocol (`POST /v1/systemone`):** Structured textual `state` + 7 parallel typed questions (`dirigido_ao_robo`, `rota_principal`, `pool_fala_pronta`, `fala_parametrizada`, `acao_rover`, `cognicao_gemini`, `precisa_imagem_camera`) returning calibrated probabilities in a single forward pass.
+- **Layer 2 Inference Protocol (`POST /v1/systemone`):** Structured textual `state` + **9 parallel typed questions** (`dirigido_ao_robo`, `rota_principal`, `pool_fala_pronta`, `fala_parametrizada`, `acao_rover`, `cognicao_gemini`, `precisa_imagem_camera`, `cerebro_persona`, `skill_modular`) returning calibrated probabilities in a single forward pass.
 - **Zero-Delay UDP Video & Discovery (`Port 5005`, from `Rover`):** Custom `'RVR1'` (`0x52565231`) 16-byte `<IHHHHI` packet header, `HELLO` broadcast discovery, RTT ping (`P` + `<d`), and latest-frame socket draining without frame queue buildup.
 - **ASCII Chassis Control Frames (`<C,a,b,c>`, from `Rover`):** Compact serial protocol for differential motors (`<M,esq,dir>`), microsecond-smoothed Pan/Tilt (`<S,pan10,tilt10,vel10>`), battery telemetry (`<B,mV,minmV>`), and emergency brake (`<X>`).
 
@@ -125,6 +126,29 @@ Measured on **Windows 11 / RTX 3050 OEM (8 GB VRAM) / Ollama v0.40.16 (`OLLAMA_V
 
 ---
 
+## 💻 Hardware & Cloud Resource Footprint (Current Architecture)
+
+Measured/projected resource usage for the full pipeline (**Multi-Brain + 9 Alexa-style Skills + SQLite Knowledge Graph + GE2E Voice ID + Jev Router + Vision/STT/TTS**) on the target host PC (**NVIDIA RTX 3050 8 GB VRAM + Intel Core i5-14600 + 16 GB DDR5**):
+
+| Subsystem / Layer | VRAM (`RTX 3050 8 GB`) | System RAM | CPU / Inference Latency | Local Disk |
+|---|---|---|---|---|
+| **L1 — VAD + `faster-whisper small`** (`float16` CUDA; `0 MiB` via `Gemini Audio` on CPU) | `~1050–1200 MiB` *(or `0 MiB`)* | `~350 MB` | `~350–650 ms` warm CUDA | `~485 MB` |
+| **L1 — Neural GE2E Voice Biometrics** (`ge2e_256d`, 3-layer LSTM CPU) | **`0 MiB`** | `~45 MB` | `~25–45 ms` / utterance | `17.1 MB` (`voice_encoder_ge2e.pt`) |
+| **L2 — Jev Router `tev1:0.8b`** (`Q8_0`, Ollama `CUDA0`, `OLLAMA_VULKAN=0`, `keep_alive=-1`) | **`1245.7 MiB`** | `~400 MB` | **`p50 = 388.5 ms`** (9 parallel questions) | `~810 MB` (`C:\Ollama`) |
+| **L3 — Local Vision (`YuNet + SFace` OpenCV DNN CPU)** | **`0 MiB`** | `~60 MB` | **`~10.8 ms`** / frame | `~37 MB` |
+| **L3 — Multi-Brain + Knowledge Graph + 9 Skills** (`GrafoMemoriaSQLite`) | **`0 MiB`** | `< 25 MB` | **`0.18 ms`** local extract + `< 1.5 ms` 2-hop query | `< 5 MB` (`~5–10 MB/yr`) |
+| **L3 — Headless Music (`PyAV + sounddevice`, 18% Ducking) & TTS (`Edge` / `Piper` CPU)** | **`0 MiB`** | `~80 MB` | `< 2%` of 1 core (music) / `~260–400 ms` (Piper) | `~60 MB` (`Piper` + `.wav` SFX) |
+| **Total Active Host PC Footprint** | **`~2.3–2.5 GB` (~30% of 8 GB; ~5.5 GB free)** | **`~1.1–1.4 GB` (< 9% of 16 GB)** | **Sub-second local routing & skills** | **`~1.4 GB` total** |
+
+- **Cloud API Quota Budget (`Gemini 3.5 Flash-Lite` Free Tier):**
+  - `~78–83%` of turns (`ignorar`, `pool_fala_pronta`, `fala_parametrizada`, `acao_rover`, `timer`, `listas`, `recados`, `musica`, `sonoplastia`) consume **`0` Gemini calls**.
+  - Open chat / narrated skill turns consume **1 REST call** (`~1050–1320` input tokens + `~20–85` output tokens — cutting input tokens by ~25–35% vs. the monolithic prompt via Multi-Brain + 2-hop graph injection).
+  - `local` graph extraction (`F1 = 0.941` across 12-case benchmark) and `busca_web` (`AwesomeAPI` + `ddgs` + `Wikipedia`) consume **`0` extra paid calls**.
+- **Embedded Robot Power Budget (`Rover` V1 → V2 PCB on `2S 7.4V 2500mAh` + `Mini 560 5V/5A`):**
+  - All AI inference executes on the host PC. The robot body only draws `~180–260 mA @ 5V` (`ESP32-S3-CAM`), plus V2 `ESP32 DevKit V1` (`~120 mA`), `INMP441` (`~1 mA`), `SSD1306` (`~15 mA`), and `MAX98357A` I2S amp (`~150–300 mA` avg ambient music at 18–35% volume, `~600 mA` peak at 3W) — well inside the `5.0V / 5A` step-down rail.
+
+---
+
 ## 📂 Repository Structure
 
 ```text
@@ -134,31 +158,62 @@ PETeleco/
 ├── AGENTS.md                   # AI engineering rules & shared Rover/PETeleco context (EN)
 ├── AGENTS.pt-BR.md             # Diretrizes para agentes & contexto paralelo (PT-BR)
 ├── .env.example                # Environment variable template (GEMINI_API_KEY, etc.)
-├── requirements.txt            # Minimal base deps + commented optional backends
+├── requirements.txt            # Runtime deps (skills, headless audio, STT/TTS) + PyTorch notes
 ├── prompts/
-│   └── persona_peteleco.md     # System Prompt v3.1 (single source of truth for persona & memory)
+│   ├── persona_peteleco.md     # Legacy monolithic reference prompt (v8.0)
+│   └── cerebros/               # Multi-Brain modular prompts routed by Jev
+│       ├── resenha.md          # Light, witty companion (default casual brain)
+│       ├── desgracado.md       # Unfiltered roast mode (blocked for professors/SERIO)
+│       ├── tecnico.md          # Engineering & electrical helper (temp=0.35)
+│       ├── serio.md            # Respectful formal lock (Tutor / SERIO mode)
+│       └── utilitario.md       # Natural Alexa-style narration for live DADOS_SKILL
 ├── data/
 │   ├── perfis_pessoas.json     # Hot profile cards & phonetic aliases for the PET lab team
 │   ├── known_faces.json        # SFace 128-D face embeddings (YuNet + SFace)
-│   └── known_voices.json       # Voice embedding database for camera-free speaker ID
+│   └── known_voices.json       # 256-D GE2E voice embedding database for camera-free speaker ID
 ├── docs/
 │   ├── context.md              # Continuous research memory & hardware constraints (EN)
 │   ├── context.pt-BR.md        # Memória técnica contínua e contexto físico (PT-BR)
 │   ├── ARCHITECTURE.md         # Deep-dive protocols, safety gates & models (EN)
 │   └── ARCHITECTURE.pt-BR.md   # Protocolos, travas de segurança e modelos (PT-BR)
+├── tests/
+│   ├── test_arena_prompts.py       # Prompt Arena regression tests
+│   ├── test_studio_prompt.py       # Prompt Studio API & SSE tests
+│   └── test_arquitetura_modular.py # Multi-Brain, 9 Skills, Knowledge Graph & GE2E Voice ID tests (28/28 OK)
 └── src/
     ├── __init__.py
-    ├── escuta_stt.py           # Layer 1: Mic capture (pre-roll VAD) + STT (Gemini Audio / faster-whisper small)
-    ├── voz_biometria.py        # Layer 1: CPU Speaker Verification (`torchaudio_192d`)
-    ├── router_systemone.py     # Layer 2: Jev (`/v1/systemone`) + fast Gemini Flash-Lite router + Active Listening gate
-    ├── memoria_pessoas.py      # Layer 3: 3-tier memory (hot JSON card + cold SQLite)
-    ├── tts_local.py            # Layer 3: Edge Neural / Gemini TTS + offline Piper TTS fallback
-    ├── visao_webcam.py         # Layer 3: Thread-safe WebcamLive capture + YuNet/SFace HUD
-    ├── persona_peteleco.py     # Layer 3/4: Adaptive persona, body-state interlocks & Gemini REST
-    ├── testar_peteleco.py      # Live simulator & workbench (CLI + --ui)
-    ├── ui_peteleco.py          # Local Web UI (MJPEG YuNet+SFace + SSE under-the-hood trace)
-    ├── static/ui_peteleco.html # Dependency-free Web UI frontend
-    └── benchmark_router.py     # 36-case isolated benchmark suite
+    ├── escuta_stt.py               # Layer 1: Mic capture (pre-roll VAD + music ducking) + STT (Gemini Audio / faster-whisper)
+    ├── voz_biometria.py            # Layer 1: CPU Neural 256-D GE2E Speaker ID + 2-tier SNR gate (`192-D` fallback)
+    ├── router_systemone.py         # Layer 2: Jev (`/v1/systemone`, 9 parallel questions) + Flash-Lite JSON + Active Listening
+    ├── cerebros.py                 # Layer 3: Multi-Brain loader, frontmatter parser, few-shot dialogue & safety locks
+    ├── grafo_memoria.py            # Layer 3: SQLite Knowledge Graph (`grafo_nos`/`grafo_arestas`, 2-hop subgraph retrieval)
+    ├── memoria_pessoas.py          # Layer 3: 3-tier memory (hot JSON card + cold SQLite + Graph hook)
+    ├── tts_local.py                # Layer 3: Edge Neural / Gemini TTS + Piper TTS fallback + music ducking
+    ├── visao_webcam.py             # Layer 3: Thread-safe WebcamLive capture + YuNet/SFace HUD
+    ├── persona_peteleco.py         # Layer 3/4: Multi-Brain persona orchestration, Skills dispatch & Gemini REST
+    ├── prompt_metrics.py           # Token/latency/rating telemetry helpers
+    ├── testar_peteleco.py          # Live simulator & workbench CLI
+    ├── ui_peteleco.py              # Local Web UI (MJPEG YuNet+SFace + SSE under-the-hood telemetry)
+    ├── studio_prompt.py            # Prompt Studio UI (multi-turn rating, Multi-Brain .md editor & Skills trace)
+    ├── arena_prompts.py            # Automated LLM-as-a-Judge & A/B prompt calibration server
+    ├── benchmark_router.py         # 36-case isolated Layer 2 Jev router benchmark suite
+    ├── benchmark_grafo.py          # 12-case Knowledge Graph Precision/Recall/F1 benchmark
+    ├── skills/                     # 9 Plug-and-Play Alexa-Style Skills (`SkillBase`)
+    │   ├── __init__.py
+    │   ├── base.py
+    │   ├── busca_web.py            # Free BRL quotes (AwesomeAPI) + ddgs + Wikipedia PT
+    │   ├── clima.py                # Live Niterói/RJ weather (Open-Meteo, 0 API key)
+    │   ├── listas.py               # Graph-backed shopping & lab lists (0 ms LLM)
+    │   ├── musica.py               # Ad-free headless player (PyAV+sounddevice, ytmusicapi, SoundCloud, SomaFM, 18% ducking)
+    │   ├── noticias.py             # Live RSS feeds (G1, Tecnoblog, GE)
+    │   ├── recados.py              # Person-indexed SQLite pending notes (auto-delivered on face/voice ID)
+    │   ├── rotinas.py              # Alexa routines ("bom_dia", "modo_estudo")
+    │   ├── sonoplastia.py          # Deterministic .wav SFX synthesizer + anti-cringe gate
+    │   └── timer.py                # Background threaded timers + TTS callback
+    └── static/
+        ├── ui_peteleco.html        # Dependency-free Web UI frontend
+        ├── studio_prompt.html      # Prompt Studio Web frontend
+        └── arena_prompts.html      # Prompt Arena Web frontend
 ```
 
 ---

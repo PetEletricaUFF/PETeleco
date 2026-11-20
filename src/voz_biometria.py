@@ -3,15 +3,18 @@
 """
 Camada 1 — Biometria de Voz (Speaker Verification na CPU, 0 MB de VRAM).
 
-Identifica quem esta falando mesmo sem a pessoa estar no campo de visao da
-camera, reaproveitando o audio recortado pelo microfone/VAD:
-- Usa `resemblyzer` automaticamente se estiver instalado no ambiente.
-- Caso contrario, usa extrator nativo em `torch` + `torchaudio` + `numpy`
-  (`torchaudio_192d`: 40 MFCCs sem c0 + deltas + 12 bandas Log-Mel + F0/pitch
-  + centroide espectral), rodando na CPU sem baixar pesos externos.
+Identifica quem está falando mesmo sem a pessoa estar no campo de visão da câmera:
+1. `ge2e_256d` (padrão neural em PyTorch puro, 0 MB VRAM na CPU): 3-layer LSTM `40 -> 256`
+   + linear `256` L2-normalizado carregando os pesos pré-treinados do Resemblyzer
+   (`models/voice_encoder_ge2e.pt`), sem depender de `webrtcvad` no Windows.
+2. `torchaudio_192d` (fallback determinístico 0-download): 40 MFCCs sem c0 + deltas
+   + 12 bandas Log-Mel + F0/pitch + centroide espectral. Mantido sempre disponível para
+   comparação e compatibilidade com perfis já salvos em `data/known_voices.json`.
 
-Persiste os embeddings em `data/known_voices.json` (media L2 incremental por
-pessoa) e suporta auto-cadastro cruzado quando o `SFace` confirma um rosto.
+Suporta identificação em **2 níveis de confiança** com estimativa de SNR (`estimar_snr_db`):
+- `confirmado`: confiança alta + margem segura + SNR limpo.
+- `confirmar`: faixa intermediária (`0.70..0.82`) ou áudio ruidoso/ambíguo -> sugere candidato.
+- `desconhecido`: abaixo de `0.70`.
 """
 
 from datetime import datetime
@@ -20,67 +23,131 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
+import requests
 import torch
+import torch.nn as nn
 import torchaudio
 
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_VOICES_PATH = ROOT_DIR / "data" / "known_voices.json"
+DEFAULT_GE2E_WEIGHTS_PATH = ROOT_DIR / "models" / "voice_encoder_ge2e.pt"
+GE2E_WEIGHTS_URL = "https://github.com/resemble-ai/Resemblyzer/raw/master/resemblyzer/pretrained.pt"
 
-try:
-    from resemblyzer import VoiceEncoder, preprocess_wav  # type: ignore
 
-    _HAS_RESEMBLYZER = True
-except Exception:
-    VoiceEncoder = None
-    preprocess_wav = None
-    _HAS_RESEMBLYZER = False
+class _GE2EEncoder(nn.Module):
+    """Encoder neural GE2E (LSTM 3x256 -> Linear 256) compatível com `pretrained.pt`."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.lstm = nn.LSTM(40, 256, 3, batch_first=True)
+        self.linear = nn.Linear(256, 256)
+        self.relu = nn.ReLU()
+        self.similarity_weight = nn.Parameter(torch.tensor([10.0]))
+        self.similarity_bias = nn.Parameter(torch.tensor([-5.0]))
+
+    def forward(self, mels: torch.Tensor) -> torch.Tensor:
+        _, (hidden, _) = self.lstm(mels)
+        embeds_raw = self.relu(self.linear(hidden[-1]))
+        return embeds_raw / (torch.norm(embeds_raw, dim=1, keepdim=True) + 1e-9)
 
 
 class IdentificadorVoz:
-    """Extrator de embedding vocal e classificador por similaridade cosseno."""
+    """Extrator de embedding vocal com encoder neural GE2E + fallback 192-D e 2 níveis."""
 
     def __init__(
         self,
         voices_path: Optional[Path] = None,
         sample_rate: int = 16000,
         limiar_confianca: float = 0.82,
+        limiar_duvida: float = 0.70,
         margem_minima: float = 0.025,
-        preferir_resemblyzer: bool = True,
+        preferir_ge2e: bool = True,
+        auto_download_ge2e: bool = True,
+        weights_path: Optional[Path] = None,
+        preferir_resemblyzer: Optional[bool] = None,
     ) -> None:
         self.voices_path = Path(voices_path or DEFAULT_VOICES_PATH)
+        self.weights_path = Path(weights_path or DEFAULT_GE2E_WEIGHTS_PATH)
         self.sample_rate = sample_rate
-        self.limiar_confianca = limiar_confianca
-        self.margem_minima = margem_minima
+        self.limiar_confianca = float(limiar_confianca)
+        self.limiar_duvida = float(limiar_duvida)
+        self.margem_minima = float(margem_minima)
+        self.auto_download_ge2e = bool(auto_download_ge2e)
 
-        self._encoder: Any = None
-        if preferir_resemblyzer and _HAS_RESEMBLYZER:
-            self.backend = "resemblyzer_256d"
-            self._encoder = VoiceEncoder(device="cpu")
+        usar_neural = bool(preferir_ge2e if preferir_resemblyzer is None else preferir_resemblyzer)
+
+        # Transformações base sempre prontas (usadas no fallback e compatibilidade retroativa)
+        self._mfcc_transform = torchaudio.transforms.MFCC(
+            sample_rate=sample_rate,
+            n_mfcc=41,
+            melkwargs={
+                "n_fft": 512,
+                "hop_length": 160,
+                "n_mels": 64,
+                "f_min": 60.0,
+                "f_max": 7600.0,
+            },
+        )
+        self._mel_transform = torchaudio.transforms.MelSpectrogram(
+            sample_rate=sample_rate,
+            n_fft=512,
+            hop_length=160,
+            n_mels=64,
+            f_min=60.0,
+            f_max=7600.0,
+        )
+        self._ge2e_mel_transform = torchaudio.transforms.MelSpectrogram(
+            sample_rate=sample_rate,
+            n_fft=400,
+            hop_length=160,
+            n_mels=40,
+            power=2.0,
+            norm="slaney",
+            mel_scale="slaney",
+        )
+
+        self._ge2e_encoder: Optional[_GE2EEncoder] = None
+        if usar_neural and self._carregar_ge2e():
+            self.backend = "ge2e_256d"
         else:
             self.backend = "torchaudio_192d"
-            self._mfcc_transform = torchaudio.transforms.MFCC(
-                sample_rate=sample_rate,
-                n_mfcc=41,  # indice 0 e energia; usamos 1..40 para invariancia de ganho
-                melkwargs={
-                    "n_fft": 512,
-                    "hop_length": 160,
-                    "n_mels": 64,
-                    "f_min": 60.0,
-                    "f_max": 7600.0,
-                },
-            )
-            self._mel_transform = torchaudio.transforms.MelSpectrogram(
-                sample_rate=sample_rate,
-                n_fft=512,
-                hop_length=160,
-                n_mels=64,
-                f_min=60.0,
-                f_max=7600.0,
-            )
 
         self.vozes: Dict[str, Dict[str, Any]] = {}
         self.carregar()
+
+    def _carregar_ge2e(self) -> bool:
+        if not self.weights_path.exists() and self.auto_download_ge2e:
+            try:
+                self.weights_path.parent.mkdir(parents=True, exist_ok=True)
+                tmp = self.weights_path.with_suffix(".pt.tmp")
+                resp = requests.get(GE2E_WEIGHTS_URL, timeout=20.0, stream=True)
+                resp.raise_for_status()
+                with tmp.open("wb") as f:
+                    for chunk in resp.iter_content(chunk_size=65536):
+                        if chunk:
+                            f.write(chunk)
+                if tmp.stat().st_size > 1_000_000:
+                    tmp.replace(self.weights_path)
+                else:
+                    tmp.unlink(missing_ok=True)
+            except Exception:
+                return False
+
+        if not self.weights_path.exists():
+            return False
+
+        try:
+            ckpt = torch.load(self.weights_path, map_location="cpu", weights_only=False)
+            state = ckpt["model_state"] if isinstance(ckpt, dict) and "model_state" in ckpt else ckpt
+            enc = _GE2EEncoder()
+            enc.load_state_dict(state, strict=True)
+            enc.eval()
+            self._ge2e_encoder = enc
+            return True
+        except Exception:
+            self._ge2e_encoder = None
+            return False
 
     def carregar(self) -> None:
         if not self.voices_path.exists():
@@ -126,27 +193,67 @@ class IdentificadorVoz:
         mascara = rms >= limiar
         return mascara, frames.cpu().numpy()
 
-    def extrair_embedding(
+    def estimar_snr_db(self, audio_np: np.ndarray, sr: int = 16000) -> float:
+        """Estima SNR aproximado em dB pela razão entre percentil 90 e 15 de RMS dos frames."""
+        if audio_np is None or np.asarray(audio_np).size < 400:
+            return 0.0
+        wav_1d = self._preparar_audio(audio_np, sr).squeeze(0)
+        if wav_1d.numel() < 400:
+            return 0.0
+        frames = wav_1d.unfold(0, 400, 160)
+        rms = torch.sqrt(torch.mean(frames * frames, dim=1) + 1e-10).cpu().numpy()
+        if rms.size == 0:
+            return 0.0
+        p90 = float(np.percentile(rms, 90))
+        p15 = float(np.percentile(rms, 15))
+        snr = 20.0 * np.log10((p90 + 1e-6) / (p15 + 1e-6))
+        return round(float(max(0.0, snr)), 2)
+
+    def _extrair_ge2e_256d(
         self,
         audio_np: np.ndarray,
         sr: int = 16000,
         min_segundos_ativos: float = 0.55,
     ) -> Optional[np.ndarray]:
-        """Extrai embedding L2-normalizado se houver fala ativa suficiente."""
-        if audio_np is None or np.asarray(audio_np).size < int(sr * 0.4):
+        if self._ge2e_encoder is None:
+            return None
+        wav = self._preparar_audio(audio_np, sr)
+        wav_1d = wav.squeeze(0)
+        mascara, _ = self._mascara_frames_ativos(wav_1d)
+        min_frames = max(25, int((min_segundos_ativos * self.sample_rate) / 160))
+        n_ativos = int(mascara.sum().item()) if mascara.numel() else 0
+        if n_ativos < min_frames:
             return None
 
-        if self.backend == "resemblyzer_256d" and self._encoder is not None:
-            arr = np.asarray(audio_np, dtype=np.float32)
-            if arr.ndim > 1:
-                arr = np.mean(arr, axis=1)
-            wav_proc = preprocess_wav(arr, source_sr=sr)
-            if wav_proc.size < int(self.sample_rate * min_segundos_ativos):
+        with torch.no_grad():
+            mel = self._ge2e_mel_transform(wav).squeeze(0).transpose(0, 1)  # (T, 40)
+            t_min = min(mel.shape[0], mascara.shape[0])
+            mel_ativo = mel[:t_min][mascara[:t_min]]
+            if mel_ativo.shape[0] < 30:
                 return None
-            emb = self._encoder.embed_utterance(wav_proc).astype(np.float32)
-            norm = float(np.linalg.norm(emb))
-            return emb / norm if norm > 1e-9 else None
 
+            janela = 160
+            passo = 80
+            if mel_ativo.shape[0] <= janela:
+                janelas = mel_ativo.unsqueeze(0)
+            else:
+                fatias = []
+                for ini in range(0, mel_ativo.shape[0] - janela + 1, passo):
+                    fatias.append(mel_ativo[ini : ini + janela])
+                if not fatias or (mel_ativo.shape[0] - janela) % passo != 0:
+                    fatias.append(mel_ativo[-janela:])
+                janelas = torch.stack(fatias, dim=0)
+
+            embeds = self._ge2e_encoder(janelas)  # (N_janelas, 256)
+            emb_medio = embeds.mean(dim=0).cpu().numpy().astype(np.float32)
+        return self._norm_l2(emb_medio)
+
+    def _extrair_torchaudio_192d(
+        self,
+        audio_np: np.ndarray,
+        sr: int = 16000,
+        min_segundos_ativos: float = 0.55,
+    ) -> Optional[np.ndarray]:
         wav = self._preparar_audio(audio_np, sr)
         wav_1d = wav.squeeze(0)
         mascara, frames_np = self._mascara_frames_ativos(wav_1d)
@@ -171,7 +278,6 @@ class IdentificadorVoz:
         d2_a = delta2[:, :t_min][:, m]
         mel_a = log_mel[:, :t_min][:, m]  # (64, N)
 
-        # 1) Bloco MFCC (160-D): media estatica (trato vocal) + variabilidade + dinamicas
         bloco_mfcc = torch.cat(
             [
                 mfcc_a.mean(dim=1),
@@ -182,7 +288,6 @@ class IdentificadorVoz:
             dim=0,
         ).cpu().numpy()
 
-        # 2) Bloco Log-Mel agrupado em 12 bandas (24-D)
         mel_bandas = mel_a[:60, :].reshape(12, 5, -1).mean(dim=1)  # (12, N)
         bloco_mel = torch.cat(
             [
@@ -192,11 +297,9 @@ class IdentificadorVoz:
             dim=0,
         ).cpu().numpy()
 
-        # 3) Bloco Prosodia F0 / Espectro (8-D)
         frames_ativos = frames_np[:t_min][m.cpu().numpy()]
         bloco_prosodia = self._extrair_prosodia_espectro(frames_ativos)
 
-        # Normaliza cada bloco antes da ponderacao para evitar dominancia de escala
         b1 = self._norm_l2(bloco_mfcc) * 0.65
         b2 = self._norm_l2(bloco_mel) * 0.20
         b3 = self._norm_l2(bloco_prosodia) * 0.15
@@ -204,14 +307,29 @@ class IdentificadorVoz:
         emb_final = np.concatenate([b1, b2, b3]).astype(np.float32)
         return self._norm_l2(emb_final)
 
+    def extrair_embedding(
+        self,
+        audio_np: np.ndarray,
+        sr: int = 16000,
+        min_segundos_ativos: float = 0.55,
+    ) -> Optional[np.ndarray]:
+        """Extrai embedding L2-normalizado usando o backend ativo."""
+        if audio_np is None or np.asarray(audio_np).size < int(sr * 0.4):
+            return None
+        if self.backend == "ge2e_256d":
+            emb = self._extrair_ge2e_256d(audio_np, sr=sr, min_segundos_ativos=min_segundos_ativos)
+            if emb is not None:
+                return emb
+        return self._extrair_torchaudio_192d(audio_np, sr=sr, min_segundos_ativos=min_segundos_ativos)
+
     def _extrair_prosodia_espectro(self, frames: np.ndarray) -> np.ndarray:
-        """Calcula estatisticas de F0 (pitch), centroide espectral e ZCR (8-D)."""
+        """Calcula estatísticas de F0 (pitch), centroide espectral e ZCR (8-D)."""
         if frames.shape[0] == 0:
             return np.zeros(8, dtype=np.float32)
 
         sr = float(self.sample_rate)
-        lag_min = int(sr / 360.0)  # ~44 amostras
-        lag_max = int(sr / 70.0)   # ~228 amostras
+        lag_min = int(sr / 360.0)
+        lag_max = int(sr / 70.0)
         janela = np.hanning(frames.shape[1]).astype(np.float32)
 
         f0_vals: List[float] = []
@@ -225,16 +343,13 @@ class IdentificadorVoz:
             if energia <= 1e-8:
                 continue
 
-            # ZCR
             zcrs.append(float(np.mean(np.abs(np.diff(np.signbit(f))))))
 
-            # Centroide espectral
             mag = np.abs(np.fft.rfft(f * janela))
             soma_mag = float(np.sum(mag))
             if soma_mag > 1e-8:
                 centroides.append(float(np.sum(freqs * mag) / soma_mag))
 
-            # F0 via autocorrelacao normalizada
             ac = np.correlate(f, f, mode="full")[len(f) - 1 :]
             if ac[0] > 1e-8 and lag_max < len(ac):
                 trecho = ac[lag_min:lag_max] / ac[0]
@@ -276,7 +391,7 @@ class IdentificadorVoz:
         return v / n if n > 1e-9 else v
 
     def cadastrar_amostra(self, pessoa_id: str, audio_np: np.ndarray, sr: int = 16000) -> int:
-        """Extrai o embedding do audio e atualiza a media L2 da pessoa no banco."""
+        """Extrai o embedding do áudio e atualiza a média L2 da pessoa no banco."""
         emb = self.extrair_embedding(audio_np, sr=sr)
         if emb is None:
             return 0
@@ -305,6 +420,108 @@ class IdentificadorVoz:
         self.salvar()
         return n_total
 
+    def identificar_detalhado(
+        self,
+        audio_np: np.ndarray,
+        sr: int = 16000,
+    ) -> Dict[str, Any]:
+        """
+        Identifica locutor em 2 níveis de confiança combinando score cosseno, margem e SNR.
+
+        Status retornados:
+        - `"confirmado"`: `score >= limiar_confianca`, `margem >= margem_minima` e `snr_db >= 7.0`.
+        - `"confirmar"`: faixa de dúvida (`0.70..0.82`) ou confiança afetada por ruído/empate.
+        - `"desconhecido"`: abaixo do limiar de dúvida.
+        """
+        snr_db = self.estimar_snr_db(audio_np, sr=sr)
+        emb_prim = self.extrair_embedding(audio_np, sr=sr)
+        if emb_prim is None:
+            return {
+                "status": "desconhecido",
+                "pessoa_id": "desconhecido",
+                "candidato_id": "",
+                "confianca": 0.0,
+                "margem": 0.0,
+                "snr_db": snr_db,
+                "requer_confirmacao": False,
+                "backend": self.backend,
+                "scores": {},
+            }
+
+        emb_192: Optional[np.ndarray] = emb_prim if self.backend == "torchaudio_192d" else None
+        scores: Dict[str, float] = {}
+
+        for pid, dados in self.vozes.items():
+            if not isinstance(dados, dict):
+                continue
+            ref_list = dados.get("embedding")
+            if not isinstance(ref_list, list):
+                continue
+            bk_ref = str(dados.get("backend") or self.backend)
+            if bk_ref == self.backend:
+                emb_alvo = emb_prim
+            elif bk_ref == "torchaudio_192d":
+                if emb_192 is None:
+                    emb_192 = self._extrair_torchaudio_192d(audio_np, sr=sr)
+                if emb_192 is None:
+                    continue
+                emb_alvo = emb_192
+            else:
+                continue
+
+            ref = self._norm_l2(np.asarray(ref_list, dtype=np.float32))
+            if ref.shape != emb_alvo.shape:
+                continue
+            scores[pid] = float(np.dot(emb_alvo, ref))
+
+        if not scores:
+            return {
+                "status": "desconhecido",
+                "pessoa_id": "desconhecido",
+                "candidato_id": "",
+                "confianca": 0.0,
+                "margem": 0.0,
+                "snr_db": snr_db,
+                "requer_confirmacao": False,
+                "backend": self.backend,
+                "scores": {},
+            }
+
+        ordenado = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
+        melhor_id, melhor_score = ordenado[0]
+        segundo_score = ordenado[1][1] if len(ordenado) > 1 else -1.0
+        margem = (melhor_score - segundo_score) if len(ordenado) > 1 else 1.0
+
+        if melhor_score >= self.limiar_confianca and margem >= self.margem_minima and snr_db >= 7.0:
+            status = "confirmado"
+            pessoa_id = melhor_id
+            candidato_id = melhor_id
+            requer_confirmacao = False
+        elif (self.limiar_duvida <= melhor_score < self.limiar_confianca) or (
+            melhor_score >= 0.72 and (snr_db < 7.0 or margem < self.margem_minima)
+        ):
+            status = "confirmar"
+            pessoa_id = "desconhecido"
+            candidato_id = melhor_id
+            requer_confirmacao = True
+        else:
+            status = "desconhecido"
+            pessoa_id = "desconhecido"
+            candidato_id = ""
+            requer_confirmacao = False
+
+        return {
+            "status": status,
+            "pessoa_id": pessoa_id,
+            "candidato_id": candidato_id,
+            "confianca": round(float(melhor_score), 4),
+            "margem": round(float(margem), 4),
+            "snr_db": snr_db,
+            "requer_confirmacao": requer_confirmacao,
+            "backend": self.backend,
+            "scores": scores,
+        }
+
     def identificar(
         self,
         audio_np: np.ndarray,
@@ -313,35 +530,7 @@ class IdentificadorVoz:
         """
         Compara a fala com as vozes salvas e retorna `(pessoa_id, confianca, scores)`.
 
-        Retorna `'desconhecido'` se o audio for curto demais, se nenhuma voz atingir
-        `limiar_confianca` ou se houver empate ambiguo abaixo de `margem_minima`.
+        Mantém o contrato clássico usando `identificar_detalhado`.
         """
-        emb = self.extrair_embedding(audio_np, sr=sr)
-        if emb is None:
-            return "desconhecido", 0.0, {}
-
-        scores: Dict[str, float] = {}
-        for pid, dados in self.vozes.items():
-            if not isinstance(dados, dict) or dados.get("backend") != self.backend:
-                continue
-            ref_list = dados.get("embedding")
-            if not isinstance(ref_list, list):
-                continue
-            ref = self._norm_l2(np.asarray(ref_list, dtype=np.float32))
-            if ref.shape != emb.shape:
-                continue
-            scores[pid] = float(np.dot(emb, ref))
-
-        if not scores:
-            return "desconhecido", 0.0, {}
-
-        ordenado = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
-        melhor_id, melhor_score = ordenado[0]
-        segundo_score = ordenado[1][1] if len(ordenado) > 1 else -1.0
-
-        if melhor_score < self.limiar_confianca:
-            return "desconhecido", melhor_score, scores
-        if len(ordenado) > 1 and (melhor_score - segundo_score) < self.margem_minima:
-            return "desconhecido", melhor_score, scores
-
-        return melhor_id, melhor_score, scores
+        det = self.identificar_detalhado(audio_np, sr=sr)
+        return str(det["pessoa_id"]), float(det["confianca"]), dict(det["scores"])

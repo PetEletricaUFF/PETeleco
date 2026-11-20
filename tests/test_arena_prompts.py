@@ -245,7 +245,8 @@ class ArenaAndMetricsTests(unittest.TestCase):
         self.assertNotIn("chefe", resumo.lower())
 
         prompt_atual = carregar_system_prompt_base(self.prompt_copy)
-        self.assertIn("Jarvis", prompt_atual)
+        self.assertIn("uma pessoa a mais", prompt_atual)
+        self.assertIn("EXEMPLOS DE RITMO", prompt_atual)
         self.assertIn("TELEMETRIA", prompt_atual)
         self.assertIn("apenas_voz", prompt_atual)
 

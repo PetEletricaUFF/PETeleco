@@ -28,6 +28,7 @@ from src.prompt_metrics import (
     VARIANTES_ARENA,
     avaliar_conversa_metricas,
 )
+from src.router_systemone import DEFAULT_OLLAMA_URL, normalizar_ollama_url
 from src.studio_prompt import (
     StudioPromptApp,
     abrir_servidor_porta_livre,
@@ -73,13 +74,13 @@ class ArenaPromptsApp:
         *,
         prompt_path: Optional[Path] = None,
         perfis_path: Optional[Path] = None,
-        ollama_url: str = "http://localhost:11434",
+        ollama_url: str = DEFAULT_OLLAMA_URL,
         pacing_seconds: float = 4.2,
     ) -> None:
         self.studio = StudioPromptApp(
             prompt_path=prompt_path,
             perfis_path=perfis_path,
-            ollama_url=ollama_url,
+            ollama_url=normalizar_ollama_url(ollama_url),
         )
         self.pacing_seconds = max(0.0, float(pacing_seconds))
 
@@ -258,7 +259,7 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1", help="Host HTTP (padrao: 127.0.0.1)")
     parser.add_argument("--porta", type=int, default=8775, help="Porta HTTP inicial (padrao: 8775)")
     parser.add_argument("--sem-browser", action="store_true", help="Nao abre o navegador automaticamente")
-    parser.add_argument("--ollama-url", default="http://localhost:11434", help="URL do Ollama local")
+    parser.add_argument("--ollama-url", default=DEFAULT_OLLAMA_URL, help="URL do Ollama local")
     parser.add_argument(
         "--pacing-s",
         type=float,
@@ -291,7 +292,7 @@ def main() -> None:
         f"Ollama   : {'ONLINE (' + ', '.join(estado['ollama_models']) + ')' if estado['ollama_online'] and estado['ollama_models'] else ('ONLINE (sem modelo de chat)' if estado['ollama_online'] else 'OFFLINE')}"
     )
     print("Modo     : Multi-chat lado a lado com nota 0–5 e métricas (sem escrita em DB).")
-    print("Pressione Ctrl+C neste terminal para encerrar.")
+    print("Pressione Ctrl+C neste terminal para encerrar.", flush=True)
 
     if not args.sem_browser:
         threading_timer = threading.Timer(0.4, lambda: webbrowser.open(url))

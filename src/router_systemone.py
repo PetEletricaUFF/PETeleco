@@ -21,8 +21,16 @@ import unicodedata
 import requests
 
 
-DEFAULT_OLLAMA_URL = "http://localhost:11434"
+DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434"
 DEFAULT_MODEL = "tev1:0.8b"
+
+
+def normalizar_ollama_url(url: Optional[str]) -> str:
+    """Converte `localhost` para `127.0.0.1` evitando atraso de 2s no IPv6 (::1) no Windows."""
+    limpa = (url or DEFAULT_OLLAMA_URL).strip().rstrip("/")
+    if not limpa:
+        return DEFAULT_OLLAMA_URL
+    return re.sub(r"^(https?://)localhost\b", r"\g<1>127.0.0.1", limpa, flags=re.IGNORECASE)
 
 
 def _norm_simples(texto: str) -> str:
@@ -76,12 +84,53 @@ class DecisaoRoteador:
     requer_confirmacao: bool = False
     precisa_imagem_camera: bool = False
     prob_imagem_camera: float = 0.0
+    cerebro_sugerido: str = "resenha"
+    confianca_cerebro: float = 0.0
+    skill_sugerida: str = "nenhuma"
+    confianca_skill: float = 0.0
     latencia_ms: float = 0.0
     respostas_brutas: Dict[str, Any] = field(default_factory=dict)
 
 
-def construir_perguntas_rover() -> Dict[str, Any]:
-    """Define o conjunto paralelo de perguntas Jev-based do Rover Cognitivo."""
+DEFAULT_CRITERIOS_CEREBROS: Dict[str, str] = {
+    "resenha": "Casual chat, joking around, venting, daily life, light banter, or open social conversation.",
+    "desgracado": "User explicitly provokes, roasts, challenges, or asks for harsh/sarcastic/brutal teasing or heavy banter.",
+    "tecnico": "Objective technical, scientific, math, electronics, circuits, programming, study explanation, or visual inspection/reading of a scene or object.",
+    "serio": "Formal, polite, academic or institutional request, or addressing the robot professionally.",
+    "utilitario": "Request asking to run a utility tool/function such as weather forecast, music playback, daily news, leaving or checking messages, setting a timer/reminder, or quick web lookup.",
+}
+
+DEFAULT_CRITERIOS_SKILLS: Dict[str, str] = {
+    "clima": (
+        "Asking for current weather, outside temperature, rain forecast, or if it is hot, cold, or sunny right now "
+        "(NOT general science why-questions about the sky or physics)."
+    ),
+    "musica": "Asking to play a song/music/artist/genre, pause, resume, skip to next/previous track, stop music, or turn volume up/down/mute.",
+    "noticias": "Asking for today's news, headlines, what is happening in the world, tech news, or sports news.",
+    "recados": (
+        "Asking the robot to leave, pass, or tell a message/note to another colleague/person "
+        "(e.g. 'avisa o Heitor que...', 'fala pro...', 'deixa um recado para...'), "
+        "or asking if anyone left messages for them."
+    ),
+    "timer": "Asking to set a timer, countdown, Pomodoro, alarm, or timed reminder, or checking/canceling active timers.",
+    "busca_web": "Asking to search the web/Google for a live external fact, definition, sports score, currency quote, or quick factual lookup not covered by weather or news.",
+    "sonoplastia": "Explicitly asking the robot to play a sound effect like ba-dum-tss, crickets, sad trombone, or ironic applause.",
+    "listas": "Asking to add, remove, mark done, clear, or read items on a shopping list, to-do list, or lab materials list.",
+    "rotinas": "Explicitly triggering a multi-step routine like 'rotina bom dia', 'modo estudo', 'ativa o modo foco', or 'sai do modo estudo' (NOT a simple 'bom dia' greeting alone).",
+    "nenhuma": "Regular conversation, greeting, robot movement, or pure conceptual/technical question that needs no external utility tool.",
+}
+
+
+def construir_perguntas_rover(
+    criterios_cerebros: Optional[Dict[str, str]] = None,
+    criterios_skills: Optional[Dict[str, str]] = None,
+) -> Dict[str, Any]:
+    """Define o conjunto paralelo de perguntas Jev-based (rotas + cérebros + skills)."""
+    crit_cerebros = dict(criterios_cerebros) if criterios_cerebros else dict(DEFAULT_CRITERIOS_CEREBROS)
+    crit_skills = dict(criterios_skills) if criterios_skills else dict(DEFAULT_CRITERIOS_SKILLS)
+    if "nenhuma" not in crit_skills:
+        crit_skills["nenhuma"] = DEFAULT_CRITERIOS_SKILLS["nenhuma"]
+
     return {
         "dirigido_ao_robo": {
             "type": "noul",
@@ -186,6 +235,20 @@ def construir_perguntas_rover() -> Dict[str, Any]:
                 "false": "Time, weather, battery, face-ID lookup, greetings, motor commands, or pure conceptual questions.",
             },
         },
+        "cerebro_persona": {
+            "type": "choice",
+            "instructions": (
+                "Which specialized PETeleco brain/persona prompt best matches the tone and task of USER_SPEECH?"
+            ),
+            "criteria": crit_cerebros,
+        },
+        "skill_modular": {
+            "type": "choice",
+            "instructions": (
+                "Does USER_SPEECH request one of the robot's modular utility skills/tools, or 'nenhuma'?"
+            ),
+            "criteria": crit_skills,
+        },
     }
 
 
@@ -202,8 +265,10 @@ class RoteadorSystemOne:
         limiar_acao_direta: float = 0.80,
         limiar_acao_confirmacao: float = 0.50,
         limiar_imagem: float = 0.55,
+        criterios_cerebros: Optional[Dict[str, str]] = None,
+        criterios_skills: Optional[Dict[str, str]] = None,
     ) -> None:
-        self.base_url = base_url.rstrip("/")
+        self.base_url = normalizar_ollama_url(base_url)
         self.model = model
         self.timeout_s = timeout_s
         self.keep_alive = keep_alive
@@ -212,7 +277,21 @@ class RoteadorSystemOne:
         self.limiar_acao_confirmacao = limiar_acao_confirmacao
         self.limiar_imagem = limiar_imagem
         self._session = requests.Session()
-        self._questions = construir_perguntas_rover()
+        self._questions = construir_perguntas_rover(
+            criterios_cerebros=criterios_cerebros,
+            criterios_skills=criterios_skills,
+        )
+
+    def atualizar_criterios_modulares(
+        self,
+        criterios_cerebros: Optional[Dict[str, str]] = None,
+        criterios_skills: Optional[Dict[str, str]] = None,
+    ) -> None:
+        """Atualiza dinamicamente os critérios Jev de cérebros e skills registrados."""
+        self._questions = construir_perguntas_rover(
+            criterios_cerebros=criterios_cerebros,
+            criterios_skills=criterios_skills,
+        )
 
     def verificar_servidor(self) -> str:
         """Consulta a versao do servidor Ollama local e retorna a string de versao."""
@@ -266,22 +345,43 @@ class RoteadorSystemOne:
         param_choice, param_prob = self._melhor_subtipo(answers.get("fala_parametrizada", {}))
         pool_choice, pool_prob = self._melhor_subtipo(answers.get("pool_fala_pronta", {}))
         gem_choice, gem_prob = self._melhor_subtipo(answers.get("cognicao_gemini", {}))
+        cerebro_choice, cerebro_prob = self._melhor_subtipo(answers.get("cerebro_persona", {}))
+        if cerebro_choice == "nenhuma":
+            cerebro_choice = "resenha"
+        skill_choice, skill_prob = self._melhor_subtipo(answers.get("skill_modular", {}))
+
+        def _decisao(
+            rota_final: str,
+            subtipo: str,
+            confianca: float,
+            dirigido: float = p_dirigido,
+            requer_confirmacao: bool = False,
+            precisa_imagem: bool = False,
+            skill_override: Optional[str] = None,
+            conf_skill_override: Optional[float] = None,
+            cerebro_override: Optional[str] = None,
+        ) -> DecisaoRoteador:
+            return DecisaoRoteador(
+                rota_final=rota_final,
+                subtipo=subtipo,
+                confianca=confianca,
+                dirigido_ao_robo=dirigido,
+                requer_confirmacao=requer_confirmacao,
+                precisa_imagem_camera=precisa_imagem,
+                prob_imagem_camera=p_imagem,
+                cerebro_sugerido=cerebro_override or cerebro_choice,
+                confianca_cerebro=cerebro_prob,
+                skill_sugerida=skill_override if skill_override is not None else skill_choice,
+                confianca_skill=conf_skill_override if conf_skill_override is not None else skill_prob,
+                latencia_ms=latencia_ms,
+                respostas_brutas=answers,
+            )
 
         norm_speech = _norm_simples(contexto.transcricao)
 
         # Trava de emergencia: parada explicita com alta confianca vence mesmo em fala rapida
         if acao_choice == "parar" and acao_prob >= 0.90 and (p_dirigido >= 0.50 or contexto.modo_escuta_ativa):
-            return DecisaoRoteador(
-                rota_final="acao_rover",
-                subtipo="parar",
-                confianca=acao_prob,
-                dirigido_ao_robo=p_dirigido,
-                requer_confirmacao=False,
-                precisa_imagem_camera=False,
-                prob_imagem_camera=p_imagem,
-                latencia_ms=latencia_ms,
-                respostas_brutas=answers,
-            )
+            return _decisao("acao_rover", "parar", acao_prob)
 
         # Filtro combinado de escuta: desativado em Modo Escuta Ativa (pos wake-word)
         p_ignorar = float(rota_probs.get("ignorar", 0.0))
@@ -292,16 +392,7 @@ class RoteadorSystemOne:
                 or (p_dirigido < self.limiar_dirigido and p_ignorar >= 0.50)
                 or (p_ignorar >= 0.85 and p_dirigido < 0.65)
             ):
-                return DecisaoRoteador(
-                    rota_final="ignorar",
-                    subtipo="conversa_paralela_ou_ruido",
-                    confianca=max(1.0 - p_dirigido, p_ignorar),
-                    dirigido_ao_robo=p_dirigido,
-                    precisa_imagem_camera=False,
-                    prob_imagem_camera=p_imagem,
-                    latencia_ms=latencia_ms,
-                    respostas_brutas=answers,
-                )
+                return _decisao("ignorar", "conversa_paralela_ou_ruido", max(1.0 - p_dirigido, p_ignorar))
 
         # Caso rota_principal tenha empatado abaixo de 0.50 em ignorar, usa a melhor camada ativa
         if rota_choice == "ignorar":
@@ -336,17 +427,7 @@ class RoteadorSystemOne:
         if rota_choice == "acao_rover":
             if acao_choice != "nenhuma":
                 precisa_confirmar = acao_choice != "parar" and acao_prob < self.limiar_acao_direta
-                return DecisaoRoteador(
-                    rota_final="acao_rover",
-                    subtipo=acao_choice,
-                    confianca=acao_prob,
-                    dirigido_ao_robo=p_dirigido,
-                    requer_confirmacao=precisa_confirmar,
-                    precisa_imagem_camera=False,
-                    prob_imagem_camera=p_imagem,
-                    latencia_ms=latencia_ms,
-                    respostas_brutas=answers,
-                )
+                return _decisao("acao_rover", acao_choice, acao_prob, requer_confirmacao=precisa_confirmar)
             # Se rota_principal indicou acao fisica e uma subacao clara ou movimento livre aparece,
             # escala em vez de descartar silenciosamente para saudacao falsa.
             acao_probs = answers.get("acao_rover", {}).get("probabilities") or {}
@@ -358,16 +439,11 @@ class RoteadorSystemOne:
                 sub_acao = "ir_ate_objeto" if parece_movimento_livre else max(acoes_validas, key=acoes_validas.get)
                 sub_prob = max(acoes_validas.get(sub_acao, 0.0), rota_prob * 0.7 if parece_movimento_livre else 0.0)
                 if sub_prob >= 0.25 or parece_movimento_livre:
-                    return DecisaoRoteador(
-                        rota_final="acao_rover",
-                        subtipo=sub_acao,
-                        confianca=sub_prob,
-                        dirigido_ao_robo=p_dirigido,
+                    return _decisao(
+                        "acao_rover",
+                        sub_acao,
+                        sub_prob,
                         requer_confirmacao=not parece_movimento_livre,
-                        precisa_imagem_camera=False,
-                        prob_imagem_camera=p_imagem,
-                        latencia_ms=latencia_ms,
-                        respostas_brutas=answers,
                     )
 
             # Se acao_rover afirmou 'nenhuma', evita acionar motores por falso positivo em rota_principal
@@ -380,28 +456,15 @@ class RoteadorSystemOne:
                 rota_choice = max(outras, key=outras.get)
                 rota_prob = outras[rota_choice]
                 if rota_choice == "ignorar":
-                    return DecisaoRoteador(
-                        rota_final="ignorar",
-                        subtipo="conversa_paralela_ou_ruido",
-                        confianca=max(1.0 - p_dirigido, rota_prob),
-                        dirigido_ao_robo=p_dirigido,
-                        precisa_imagem_camera=False,
-                        prob_imagem_camera=p_imagem,
-                        latencia_ms=latencia_ms,
-                        respostas_brutas=answers,
-                    )
+                    return _decisao("ignorar", "conversa_paralela_ou_ruido", max(1.0 - p_dirigido, rota_prob))
 
         # Fallback fonetico para consulta de data quando STT engole "dia" -> "que de hoje"
         if any(f in norm_speech for f in ("que dia e hoje", "que de hoje", "que dia hoje", "data de hoje")):
-            return DecisaoRoteador(
-                rota_final="fala_parametrizada",
-                subtipo="hora_atual",
-                confianca=max(param_prob, 0.90),
-                dirigido_ao_robo=max(p_dirigido, 0.90),
-                precisa_imagem_camera=False,
-                prob_imagem_camera=p_imagem,
-                latencia_ms=latencia_ms,
-                respostas_brutas=answers,
+            return _decisao(
+                "fala_parametrizada",
+                "hora_atual",
+                max(param_prob, 0.90),
+                dirigido=max(p_dirigido, 0.90),
             )
 
         # Guardrail para pedidos abertos (ex.: "conta uma piada boa ai") nao cairem em elogio/saudacao pronta
@@ -412,6 +475,12 @@ class RoteadorSystemOne:
         if rota_choice == "pool_fala_pronta" and parece_pedido_aberto:
             rota_choice = "cognicao_gemini"
 
+        # Corroboracao cruzada: se skill_modular identificou clima com alta confianca
+        # E fala_parametrizada confundiu "hoje" com hora_atual (sem hijacking de perguntas cientificas).
+        if skill_choice == "clima" and skill_prob >= 0.85 and param_choice == "hora_atual":
+            param_choice = "previsao_clima"
+            param_prob = max(param_prob, skill_prob)
+
         # Desempate por especialidade: consulta deterministica forte (hora/clima/bateria/rosto)
         # prevalece sobre confusao de rota_principal com social curto ou Gemini vago
         if (
@@ -420,52 +489,37 @@ class RoteadorSystemOne:
             and rota_choice in ("pool_fala_pronta", "cognicao_gemini")
             and p_imagem < self.limiar_imagem
         ):
-            return DecisaoRoteador(
-                rota_final="fala_parametrizada",
-                subtipo=param_choice,
-                confianca=param_prob,
-                dirigido_ao_robo=p_dirigido,
-                precisa_imagem_camera=False,
-                prob_imagem_camera=p_imagem,
-                latencia_ms=latencia_ms,
-                respostas_brutas=answers,
+            sk_ov = "clima" if param_choice == "previsao_clima" else None
+            return _decisao(
+                "fala_parametrizada",
+                param_choice,
+                param_prob,
+                skill_override=sk_ov,
+                conf_skill_override=max(skill_prob, param_prob) if sk_ov else None,
             )
 
         if rota_choice == "fala_parametrizada" and param_choice != "nenhuma":
-            return DecisaoRoteador(
-                rota_final="fala_parametrizada",
-                subtipo=param_choice,
-                confianca=max(param_prob, rota_prob * 0.9),
-                dirigido_ao_robo=p_dirigido,
-                precisa_imagem_camera=False,
-                prob_imagem_camera=p_imagem,
-                latencia_ms=latencia_ms,
-                respostas_brutas=answers,
+            sk_ov = "clima" if param_choice == "previsao_clima" else None
+            return _decisao(
+                "fala_parametrizada",
+                param_choice,
+                max(param_prob, rota_prob * 0.9),
+                skill_override=sk_ov,
+                conf_skill_override=max(skill_prob, param_prob) if sk_ov else None,
             )
 
         if rota_choice == "pool_fala_pronta" and pool_choice != "nenhuma":
-            return DecisaoRoteador(
-                rota_final="pool_fala_pronta",
-                subtipo=pool_choice,
-                confianca=max(pool_prob, rota_prob * 0.9),
-                dirigido_ao_robo=p_dirigido,
-                precisa_imagem_camera=False,
-                prob_imagem_camera=p_imagem,
-                latencia_ms=latencia_ms,
-                respostas_brutas=answers,
-            )
+            return _decisao("pool_fala_pronta", pool_choice, max(pool_prob, rota_prob * 0.9))
 
         subtipo_gem = gem_choice if gem_choice != "nenhuma" else "conversa_aberta"
         precisa_img = p_imagem >= self.limiar_imagem or subtipo_gem == "descrever_cena"
-        return DecisaoRoteador(
-            rota_final="cognicao_gemini",
-            subtipo=subtipo_gem,
-            confianca=max(gem_prob, rota_prob),
-            dirigido_ao_robo=p_dirigido,
-            precisa_imagem_camera=precisa_img,
-            prob_imagem_camera=p_imagem,
-            latencia_ms=latencia_ms,
-            respostas_brutas=answers,
+        cerebro_ov = "tecnico" if precisa_img else None
+        return _decisao(
+            "cognicao_gemini",
+            subtipo_gem,
+            max(gem_prob, rota_prob),
+            precisa_imagem=precisa_img,
+            cerebro_override=cerebro_ov,
         )
 
     @staticmethod
@@ -517,6 +571,8 @@ class RoteadorSystemOne:
             "acao_rover": ["seguir_rosto", "ir_ate_objeto", "parar", "radar"],
             "cognicao_gemini": ["descrever_cena", "conversa_aberta"],
         }
+        cerebros_validos = list((self._questions.get("cerebro_persona", {}).get("criteria") or DEFAULT_CRITERIOS_CEREBROS).keys())
+        skills_validas = list((self._questions.get("skill_modular", {}).get("criteria") or DEFAULT_CRITERIOS_SKILLS).keys())
         prompt = (
             "Voce e o roteador de intencoes do robo PETeleco (em portugues BR). "
             "Classifique USER_SPEECH no formato JSON exato.\n"
@@ -528,9 +584,12 @@ class RoteadorSystemOne:
             "- Despedida ('tchau', 'pode dormir', 'encerrar escuta') ou confirmacao seca ('sim', 'pode ir', 'confirmo' em AGUARDANDO_CONFIRMACAO): rota 'pool_fala_pronta' (NUNCA classifique apenas 'PETeleco' como despedida).\n"
             "- Cumprimentos com assunto, zoeira, piada, bate-papo, perguntas abertas ou visao ('olha isso', 'o que voce ve'): rota 'cognicao_gemini' "
             "(para que o PETeleco responda de forma organica e bem-humorada ao vivo!).\n"
-            "- Escolha 'ignorar' apenas se ACTIVE_LISTENING nao estiver ativo e for conversa clara entre terceiros ou TV.\n\n"
+            "- Escolha 'ignorar' apenas se ACTIVE_LISTENING nao estiver ativo e for conversa clara entre terceiros ou TV.\n"
+            f"- cerebro_sugerido deve ser um de: {cerebros_validos}.\n"
+            f"- skill_sugerida deve ser um de: {skills_validas} (use 'nenhuma' se nao precisar de ferramenta).\n\n"
             'Retorne APENAS JSON valido: {"rota": str, "subtipo": str, "confianca": float, '
-            '"dirigido_ao_robo": float, "precisa_imagem": bool, "requer_confirmacao": bool}'
+            '"dirigido_ao_robo": float, "precisa_imagem": bool, "requer_confirmacao": bool, '
+            '"cerebro_sugerido": str, "skill_sugerida": str}'
         )
         t0 = time.perf_counter()
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
@@ -538,7 +597,7 @@ class RoteadorSystemOne:
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {
                 "temperature": 0.0,
-                "maxOutputTokens": 180,
+                "maxOutputTokens": 220,
                 "responseMimeType": "application/json",
             },
         }
@@ -571,6 +630,13 @@ class RoteadorSystemOne:
         if rota != "acao_rover" or subtipo == "parar":
             req_conf = False
 
+        cerebro_sug = str(dados.get("cerebro_sugerido", "resenha")).strip().lower()
+        if cerebro_sug not in cerebros_validos:
+            cerebro_sug = "tecnico" if precisa_img else "resenha"
+        skill_sug = str(dados.get("skill_sugerida", "nenhuma")).strip().lower()
+        if skill_sug not in skills_validas:
+            skill_sug = "clima" if (rota == "fala_parametrizada" and subtipo == "previsao_clima") else "nenhuma"
+
         probs_fake = {k: (conf if k == rota else round((1.0 - conf) / 4.0, 4)) for k in rotas_validas}
         return DecisaoRoteador(
             rota_final=rota,
@@ -580,12 +646,18 @@ class RoteadorSystemOne:
             requer_confirmacao=req_conf,
             precisa_imagem_camera=precisa_img,
             prob_imagem_camera=0.92 if precisa_img else 0.05,
+            cerebro_sugerido=cerebro_sug,
+            confianca_cerebro=conf,
+            skill_sugerida=skill_sug,
+            confianca_skill=conf if skill_sug != "nenhuma" else 0.0,
             latencia_ms=lat_ms,
             respostas_brutas={
                 "router_backend": f"gemini_router({model})",
                 "rota_principal": {"choice": rota, "probabilities": probs_fake, "confidence": conf},
                 "dirigido_ao_robo": {"noul": dirig},
                 "precisa_imagem_camera": {"noul": 0.92 if precisa_img else 0.05},
+                "cerebro_persona": {"choice": cerebro_sug, "probabilities": {cerebro_sug: conf}, "confidence": conf},
+                "skill_modular": {"choice": skill_sug, "probabilities": {skill_sug: conf}, "confidence": conf},
                 rota: {"choice": subtipo, "probabilities": {subtipo: conf}, "confidence": conf},
             },
         )

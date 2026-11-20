@@ -87,6 +87,15 @@ def _urls_voz_piper(voice_name: str) -> Optional[Tuple[str, str]]:
     return f"{base}.onnx", f"{base}.onnx.json"
 
 
+def _definir_ducking_musica(ativo: bool) -> None:
+    try:
+        from src.skills.musica import set_music_ducking
+
+        set_music_ducking(ativo)
+    except Exception:
+        pass
+
+
 class SintetizadorTTS:
     """Sintetizador TTS multi-backend (Edge Neural -> Piper Offline -> SO)."""
 
@@ -482,20 +491,24 @@ class SintetizadorTTS:
         else:
             ordem = [(f"piper:{self.voice_name}", self.sintetizar_piper_numpy)]
 
-        for nome_backend, fn in ordem:
-            audio, sr = fn(limpo)
-            if audio is not None and self._reproduzir_numpy(audio, sr):
-                self.ultimo_backend = nome_backend
+        _definir_ducking_musica(True)
+        try:
+            for nome_backend, fn in ordem:
+                audio, sr = fn(limpo)
+                if audio is not None and self._reproduzir_numpy(audio, sr):
+                    self.ultimo_backend = nome_backend
+                    return self.ultimo_backend
+
+            if self._falar_windows_sapi(limpo):
+                self.ultimo_backend = "windows_sapi"
                 return self.ultimo_backend
 
-        if self._falar_windows_sapi(limpo):
-            self.ultimo_backend = "windows_sapi"
-            return self.ultimo_backend
+            cli_used = self._falar_linux_cli(limpo)
+            if cli_used:
+                self.ultimo_backend = cli_used
+                return cli_used
 
-        cli_used = self._falar_linux_cli(limpo)
-        if cli_used:
-            self.ultimo_backend = cli_used
-            return cli_used
-
-        self.ultimo_backend = "indisponivel"
-        return ""
+            self.ultimo_backend = "indisponivel"
+            return ""
+        finally:
+            _definir_ducking_musica(False)

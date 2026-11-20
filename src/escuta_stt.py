@@ -14,6 +14,8 @@ import base64
 from collections import deque
 import io
 import os
+from pathlib import Path
+import sys
 import threading
 import time
 from typing import Any, Callable, List, Optional, Tuple
@@ -27,6 +29,47 @@ import torchaudio
 
 from src.memoria_pessoas import carregar_env
 
+
+_WIN_DLL_HANDLES: List[Any] = []
+
+
+def _definir_ducking_musica(ativo: bool) -> None:
+    try:
+        from src.skills.musica import set_music_ducking
+
+        set_music_ducking(ativo)
+    except Exception:
+        pass
+
+
+def _configurar_dlls_cuda_windows() -> None:
+    """Garante que `torch/lib` (cublas/cudnn) esteja visivel ao ctranslate2 no Windows."""
+    if not sys.platform.startswith("win"):
+        return
+    try:
+        torch_lib = Path(torch.__file__).resolve().parent / "lib"
+        if not torch_lib.is_dir():
+            return
+        lib_str = str(torch_lib)
+        path_atual = os.environ.get("PATH", "")
+        if lib_str.lower() not in path_atual.lower():
+            os.environ["PATH"] = lib_str + os.pathsep + path_atual
+        if hasattr(os, "add_dll_directory"):
+            _WIN_DLL_HANDLES.append(os.add_dll_directory(lib_str))
+    except Exception:
+        pass
+
+
+def _definir_ducking_musica(ativo: bool) -> None:
+    try:
+        from src.skills.musica import set_music_ducking
+
+        set_music_ducking(ativo)
+    except Exception:
+        pass
+
+
+_configurar_dlls_cuda_windows()
 
 try:
     from faster_whisper import WhisperModel  # type: ignore
@@ -106,14 +149,49 @@ class EscutaSTT:
             if int(d.get("max_input_channels", 0)) > 0
         ]
 
-    def _resolver_sample_rate_entrada(self) -> int:
-        """Usa 16 kHz se o dispositivo aceitar; caso contrario, usa o default_samplerate do hardware."""
+    def _resolver_device_index(self) -> Optional[int]:
+        """Retorna device_index valido ou escolhe um microfone ativo quando padrao Windows e -1."""
+        if self.device_index is not None:
+            return self.device_index
         try:
-            sd.check_input_settings(device=self.device_index, samplerate=self.sample_rate, channels=1)
+            sd.query_devices(None, kind="input")
+            return None
+        except Exception:
+            pass
+
+        mics = self.listar_microfones()
+        dispositivos = sd.query_devices()
+        candidatos: List[Tuple[int, int, str]] = []
+        for idx, nome in mics:
+            nm = nome.lower()
+            eh_wdm = False
+            try:
+                host_name = str(sd.query_hostapis(dispositivos[idx]["hostapi"])["name"])
+                eh_wdm = "wdm-ks" in host_name.lower()
+            except Exception:
+                pass
+            eh_mic = ("microfone" in nm or "mic" in nm) and "mixagem" not in nm and "stereo mix" not in nm
+            prioridade = (1 if eh_wdm else 0) * 2 + (0 if eh_mic else 1)
+            candidatos.append((prioridade, idx, nome))
+
+        candidatos.sort(key=lambda item: (item[0], item[1]))
+        for _, idx, _ in candidatos:
+            try:
+                sd.check_input_settings(device=idx, channels=1)
+                return idx
+            except Exception:
+                continue
+        return None
+
+    def _resolver_sample_rate_entrada(self, device_index: Optional[int] = None) -> int:
+        """Usa 16 kHz se o dispositivo aceitar; caso contrario, usa o default_samplerate do hardware."""
+        dev = self.device_index if device_index is None else device_index
+        try:
+            sd.check_input_settings(device=dev, samplerate=self.sample_rate, channels=1)
             return self.sample_rate
         except Exception:
             try:
-                info = sd.query_devices(self.device_index, kind="input")
+                info = sd.query_devices(dev, kind="input")
                 return max(8000, int(round(float(info.get("default_samplerate", 48000)))))
             except Exception:
                 return self.sample_rate
@@ -127,17 +205,22 @@ class EscutaSTT:
 
     def gravar_duracao_fixa(self, segundos: float = 4.0) -> np.ndarray:
         """Grava janela fixa do microfone padrao (util para cadastro de voz `/voz`)."""
-        sr_cap = self._resolver_sample_rate_entrada()
+        dev = self._resolver_device_index()
+        sr_cap = self._resolver_sample_rate_entrada(dev)
         n_amostras = max(1, int(sr_cap * segundos))
-        gravacao = sd.rec(
-            n_amostras,
-            samplerate=sr_cap,
-            channels=1,
-            dtype="float32",
-            device=self.device_index,
-        )
-        sd.wait()
-        return self._reamostrar_para_alvo(gravacao.reshape(-1), sr_cap)
+        try:
+            gravacao = sd.rec(
+                n_amostras,
+                samplerate=sr_cap,
+                channels=1,
+                dtype="float32",
+                device=dev,
+            )
+            sd.wait()
+            return self._reamostrar_para_alvo(gravacao.reshape(-1), sr_cap)
+        except Exception as exc:
+            print(f"[AVISO MIC] Nenhum microfone ativo/conectado ({exc}).")
+            return np.zeros(0, dtype=np.float32)
 
     def gravar_microfone(
         self,
@@ -154,52 +237,63 @@ class EscutaSTT:
         Mantem um pre-roll de 450 ms para nao cortar a primeira silaba (ex.: 'Que dia')
         e ignora estalos curtissimos (< 2 blocos consecutivos acima do limiar).
         """
-        sr_cap = self._resolver_sample_rate_entrada()
+        dev = self._resolver_device_index()
+        sr_cap = self._resolver_sample_rate_entrada(dev)
         bloco_ms = 50
         bloco_amostras = int(sr_cap * (bloco_ms / 1000.0))
         pre_roll = deque(maxlen=max(1, int(450 / bloco_ms)))
         blocos_gravados: List[np.ndarray] = []
 
         falando = False
+        ducking_ligado = False
         blocos_voz = 0
         t_inicio = time.monotonic()
         t_ultima_fala = t_inicio
 
-        with sd.InputStream(
-            samplerate=sr_cap,
-            channels=1,
-            dtype="float32",
-            blocksize=bloco_amostras,
-            device=self.device_index,
-        ) as stream:
-            while True:
-                if stop_event is not None and stop_event.is_set():
-                    break
-                bloco, _ = stream.read(bloco_amostras)
-                bloco_1d = bloco.reshape(-1).copy()
-                rms = float(np.sqrt(np.mean(bloco_1d * bloco_1d) + 1e-9))
-                agora = time.monotonic()
+        try:
+            with sd.InputStream(
+                samplerate=sr_cap,
+                channels=1,
+                dtype="float32",
+                blocksize=bloco_amostras,
+                device=dev,
+            ) as stream:
+                while True:
+                    if stop_event is not None and stop_event.is_set():
+                        break
+                    bloco, _ = stream.read(bloco_amostras)
+                    bloco_1d = bloco.reshape(-1).copy()
+                    rms = float(np.sqrt(np.mean(bloco_1d * bloco_1d) + 1e-9))
+                    agora = time.monotonic()
 
-                if not falando:
-                    pre_roll.append(bloco_1d)
-                    if rms >= limiar_rms:
-                        falando = True
-                        blocos_voz = 1
-                        t_ultima_fala = agora
-                        blocos_gravados.extend(pre_roll)
-                        if on_speech_start is not None:
-                            on_speech_start()
-                    elif (agora - t_inicio) >= timeout_espera_s:
-                        return np.zeros(0, dtype=np.float32)
-                else:
-                    blocos_gravados.append(bloco_1d)
-                    if rms >= limiar_rms * 0.75:
-                        blocos_voz += 1
-                        t_ultima_fala = agora
-                    if (agora - t_ultima_fala) >= silencio_fim_s:
-                        break
-                    if (agora - t_inicio) >= duracao_max_s:
-                        break
+                    if not falando:
+                        pre_roll.append(bloco_1d)
+                        if rms >= limiar_rms:
+                            falando = True
+                            blocos_voz = 1
+                            t_ultima_fala = agora
+                            blocos_gravados.extend(pre_roll)
+                            _definir_ducking_musica(True)
+                            ducking_ligado = True
+                            if on_speech_start is not None:
+                                on_speech_start()
+                        elif (agora - t_inicio) >= timeout_espera_s:
+                            return np.zeros(0, dtype=np.float32)
+                    else:
+                        blocos_gravados.append(bloco_1d)
+                        if rms >= limiar_rms * 0.75:
+                            blocos_voz += 1
+                            t_ultima_fala = agora
+                        if (agora - t_ultima_fala) >= silencio_fim_s:
+                            break
+                        if (agora - t_inicio) >= duracao_max_s:
+                            break
+        except Exception as exc:
+            print(f"[AVISO MIC] Nenhum microfone ativo/conectado ({exc}).")
+            return np.zeros(0, dtype=np.float32)
+        finally:
+            if ducking_ligado:
+                _definir_ducking_musica(False)
 
         if not blocos_gravados or blocos_voz < 2:
             return np.zeros(0, dtype=np.float32)

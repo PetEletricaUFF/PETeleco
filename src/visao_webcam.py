@@ -18,6 +18,7 @@ from typing import Any, Callable, Dict, List, Optional
 import unicodedata
 
 
+os.environ.setdefault("OPENCV_LOG_LEVEL", "ERROR")
 if sys.platform.startswith("linux") and "QT_QPA_FONTDIR" not in os.environ:
     if Path("/usr/share/fonts").exists():
         os.environ["QT_QPA_FONTDIR"] = "/usr/share/fonts"

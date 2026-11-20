@@ -812,6 +812,14 @@
           </div>
 
           <div class="field">
+            <label for="sel-cerebro-modo">Cérebro ativo (<code class="mono">prompts/cerebros/*.md</code> · Roteador Jev)</label>
+            <select id="sel-cerebro-modo" name="cerebro_modo">
+              <option value="auto_jev">Auto — Roteador Jev (Multi-Cérebro + Skills)</option>
+              <option value="legado">Unificado Legado (prompts/persona_peteleco.md)</option>
+            </select>
+          </div>
+
+          <div class="field">
             <label for="prompt-editor">Instruções do sistema enviadas no campo <code class="mono">systemInstruction</code></label>
             <textarea id="prompt-editor" name="prompt_base" spellcheck="false"></textarea>
           </div>
@@ -819,7 +827,7 @@
           <div class="actions-row">
             <button type="button" id="btn-preview-prompt">Ver prompt final montado</button>
             <button type="button" id="btn-reload-prompt">Recarregar do .md</button>
-            <button type="button" id="btn-save-prompt" class="btn-accent">Salvar no persona_peteleco.md</button>
+            <button type="button" id="btn-save-prompt" class="btn-accent">Salvar no arquivo .md</button>
           </div>
         </section>
 
@@ -987,7 +995,10 @@
           <button type="button" class="btn-compact preset-btn" data-prompt="amanhã tem prova de eletronica de santisteban">Prova Santisteban</button>
           <button type="button" class="btn-compact preset-btn" data-prompt="tô travado numa ideia de projeto, como organizo isso rápido?">Assistente Geral</button>
           <button type="button" class="btn-compact preset-btn" data-prompt="preciso ler 8,4V num pino de 3,3V no ESP32, quais resistores uso?">Conta Técnica</button>
-          <button type="button" class="btn-compact preset-btn" data-prompt="Anda até aquela garrafa ali na ponta da mesa.">Trava física</button>
+          <button type="button" class="btn-compact preset-btn" data-prompt="Como tá o clima hoje em Niterói?">Skill: Clima</button>
+          <button type="button" class="btn-compact preset-btn" data-prompt="Quais são as notícias de tecnologia de hoje?">Skill: Notícias</button>
+          <button type="button" class="btn-compact preset-btn" data-prompt="Avisa o Heitor que deixei a fonte no armário">Skill: Recado</button>
+          <button type="button" class="btn-compact preset-btn" data-prompt="Bota um timer de 15 segundos pra testar">Skill: Timer</button>
           <button type="button" class="btn-compact preset-btn" data-prompt="Boa tarde, como está o sistema hoje?">Saudação formal</button>
         </div>
 
@@ -1078,6 +1089,7 @@
       const el = {
         promptEditor: document.getElementById("prompt-editor"),
         promptFileLabel: document.getElementById("prompt-file-label"),
+        selCerebroModo: document.getElementById("sel-cerebro-modo"),
         promptStats: document.getElementById("prompt-stats"),
         pillProvider: document.getElementById("pill-provider"),
         pillMode: document.getElementById("pill-mode"),
@@ -1150,10 +1162,11 @@
       function getCurrentConfig() {
         return {
           prompt_base: el.promptEditor.value,
+          cerebro_modo: el.selCerebroModo ? el.selCerebroModo.value : "legado",
           incluir_contexto: el.chkIncluirContexto.checked,
           provider: getCheckedRadio("provider", "gemini"),
           model: el.inpModel.value.trim(),
-          temperature: Number.isFinite(parseFloat(el.rngTemp.value)) ? parseFloat(el.rngTemp.value) : 0.85,
+          temperature: Number.isFinite(parseFloat(el.rngTemp.value)) ? parseFloat(el.rngTemp.value) : 1.0,
           max_tokens: parseInt(el.inpMaxTokens.value, 10) || 320,
           contexto: {
             pessoa_id: el.selPessoa.value || "desconhecido",
@@ -1169,6 +1182,7 @@
       }
 
       function isPromptDirty() {
+        if (el.selCerebroModo && el.selCerebroModo.value === "auto_jev") return false;
         return el.promptEditor.value.trim() !== state.savedPrompt.trim();
       }
 
@@ -1335,7 +1349,10 @@
               u.total_tokens > 0
                 ? ` · ${u.prompt_tokens || 0}→${u.output_tokens || 0} tok`
                 : "";
-            meta.textContent = `${msg.meta.model || "-"} · ${msg.meta.latency_ms ?? "-"} ms${tokStr} · modo=${msg.meta.modo_efetivo || "-"}`;
+            const cerStr = msg.meta.cerebro_id ? ` · cérebro=${msg.meta.cerebro_id}` : "";
+            const skStr = msg.meta.skill_executada ? ` · skill=${msg.meta.skill_executada}` : "";
+            const jevStr = msg.meta.jev_ms > 0 ? ` · jev=${msg.meta.jev_ms}ms` : "";
+            meta.textContent = `${msg.meta.model || "-"} · ${msg.meta.latency_ms ?? "-"} ms${jevStr}${tokStr}${cerStr}${skStr} · modo=${msg.meta.modo_efetivo || "-"}`;
           } else {
             meta.textContent = `Turno #${idx + 1}`;
           }
@@ -1469,8 +1486,12 @@
               provider: data.provider,
               model: data.model,
               latency_ms: data.latency_ms,
+              jev_ms: data.jev_ms || 0,
               usage: data.usage,
               modo_efetivo: data.modo_efetivo,
+              cerebro_id: data.cerebro_id || "",
+              cerebro_motivo: data.cerebro_motivo || "",
+              skill_executada: data.skill_executada || "",
             },
           });
           renderMessages();
@@ -1498,6 +1519,7 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             prompt_base: cfg.prompt_base,
+            cerebro_modo: cfg.cerebro_modo,
             incluir_contexto: cfg.incluir_contexto,
             contexto: cfg.contexto,
           }),
@@ -1508,33 +1530,90 @@
         el.dialogPreview.showModal();
       }
 
-      async function reloadPromptFromDisk() {
-        const resp = await fetch("/api/prompt/reload", { method: "POST", body: "{}" });
-        const data = await resp.json();
-        if (data.ok) {
-          state.savedPrompt = data.prompt_base || "";
+      function syncCerebroEditor() {
+        const modo = el.selCerebroModo ? el.selCerebroModo.value : "legado";
+        if (modo === "auto_jev") {
+          state.savedPrompt = state.legacyPrompt || "";
+          el.promptEditor.value =
+            "Modo AUTO (Roteador Jev) ativo: cada turno escolhe automaticamente o cérebro certo em prompts/cerebros/*.md (resenha, desgracado, tecnico, serio, utilitario) + executa skills modulares (clima, música, notícias, recados, timer, busca_web, sonoplastia).\n\nSelecione um cérebro específico acima para inspecionar ou editar o .md dele.";
+          el.promptEditor.readOnly = true;
+          el.promptFileLabel.textContent = "prompts/cerebros/*.md (Auto Jev + 7 Skills)";
+          el.btnSavePrompt.disabled = true;
+        } else if (modo === "legado") {
+          state.savedPrompt = state.legacyPrompt || "";
           el.promptEditor.value = state.savedPrompt;
-          updatePromptStats();
-          announce("System Prompt recarregado do arquivo.");
+          el.promptEditor.readOnly = false;
+          el.promptFileLabel.textContent = state.legacyPromptPath || "prompts/persona_peteleco.md";
+          el.btnSavePrompt.disabled = false;
+        } else {
+          const spec = (state.cerebros || []).find((c) => c.id === modo);
+          if (spec) {
+            state.savedPrompt = spec.prompt_base || "";
+            el.promptEditor.value = state.savedPrompt;
+            el.promptEditor.readOnly = false;
+            el.promptFileLabel.textContent = `prompts/cerebros/${spec.id}.md (temp=${spec.temperature} · max_tok=${spec.max_tokens})`;
+            el.rngTemp.value = String(spec.temperature ?? 1.0);
+            el.valTemp.textContent = Number(el.rngTemp.value).toFixed(2);
+            el.inpMaxTokens.value = String(spec.max_tokens ?? 240);
+            el.btnSavePrompt.disabled = false;
+          }
         }
+        updatePromptStats();
+      }
+
+      async function reloadPromptFromDisk() {
+        const resp = await fetch("/api/state");
+        const data = await resp.json();
+        state.legacyPrompt = data.prompt_base || "";
+        state.cerebros = data.cerebros || [];
+        syncCerebroEditor();
+        announce("Prompts recarregados do disco.");
       }
 
       async function savePromptToDisk() {
         showError("");
-        const resp = await fetch("/api/prompt/save", {
+        const modo = el.selCerebroModo ? el.selCerebroModo.value : "legado";
+        if (modo === "auto_jev") return;
+
+        if (modo === "legado") {
+          const resp = await fetch("/api/prompt/save", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ prompt_base: el.promptEditor.value }),
+          });
+          const data = await resp.json();
+          if (!resp.ok || !data.ok) {
+            showError(data.error || "Não foi possível salvar o prompt.");
+            return;
+          }
+          state.legacyPrompt = data.prompt_base || el.promptEditor.value;
+          state.savedPrompt = state.legacyPrompt;
+          el.promptEditor.value = state.savedPrompt;
+          updatePromptStats();
+          announce("System Prompt salvo em persona_peteleco.md.");
+          return;
+        }
+
+        const resp = await fetch("/api/cerebro/save", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt_base: el.promptEditor.value }),
+          body: JSON.stringify({
+            cerebro_id: modo,
+            prompt_base: el.promptEditor.value,
+            temperature: parseFloat(el.rngTemp.value),
+            max_tokens: parseInt(el.inpMaxTokens.value, 10),
+          }),
         });
         const data = await resp.json();
         if (!resp.ok || !data.ok) {
-          showError(data.error || "Não foi possível salvar o prompt.");
+          showError(data.error || "Não foi possível salvar o cérebro.");
           return;
         }
-        state.savedPrompt = data.prompt_base || el.promptEditor.value;
+        state.cerebros = data.cerebros || state.cerebros;
+        state.savedPrompt = data.cerebro ? data.cerebro.prompt_base : el.promptEditor.value;
         el.promptEditor.value = state.savedPrompt;
         updatePromptStats();
-        announce("System Prompt salvo em persona_peteleco.md.");
+        announce(`Cérebro ${modo} salvo em prompts/cerebros/${modo}.md.`);
       }
 
       // Light-dismiss polyfill ONLY when native closedBy is missing
@@ -1757,9 +1836,34 @@
         try {
           const resp = await fetch("/api/state");
           const data = await resp.json();
-          state.savedPrompt = data.prompt_base || "";
-          el.promptEditor.value = state.savedPrompt;
-          el.promptFileLabel.textContent = data.prompt_path || "prompts/persona_peteleco.md";
+          state.legacyPrompt = data.prompt_base || "";
+          state.legacyPromptPath = data.prompt_path || "prompts/persona_peteleco.md";
+          state.savedPrompt = state.legacyPrompt;
+          state.cerebros = data.cerebros || [];
+          state.skills = data.skills || [];
+
+          if (el.selCerebroModo) {
+            el.selCerebroModo.textContent = "";
+            const optAuto = document.createElement("option");
+            optAuto.value = "auto_jev";
+            optAuto.textContent = `Auto — Roteador Jev (${state.cerebros.length} Cérebros + ${state.skills.length} Skills)`;
+            el.selCerebroModo.appendChild(optAuto);
+
+            for (const c of state.cerebros) {
+              const opt = document.createElement("option");
+              opt.value = c.id;
+              opt.textContent = `${c.nome} (${c.id}.md · temp=${c.temperature})`;
+              el.selCerebroModo.appendChild(opt);
+            }
+
+            const optLeg = document.createElement("option");
+            optLeg.value = "legado";
+            optLeg.textContent = "Prompt Unificado Legado (persona_peteleco.md)";
+            el.selCerebroModo.appendChild(optLeg);
+
+            el.selCerebroModo.value = (data.defaults && data.defaults.cerebro_modo) || "auto_jev";
+            el.selCerebroModo.addEventListener("change", syncCerebroEditor);
+          }
 
           state.geminiConfigured = Boolean(data.gemini_configured);
           state.geminiModels = data.gemini_models || [];
@@ -1789,7 +1893,7 @@
           el.chkIncluirContexto.checked = Boolean(def.incluir_contexto ?? true);
           el.contextControls.hidden = !el.chkIncluirContexto.checked;
 
-          updatePromptStats();
+          syncCerebroEditor();
           updateProfileSummary();
           syncProviderUI(false);
           renderMessages();

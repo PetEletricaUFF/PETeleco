@@ -14,6 +14,7 @@ import base64
 from dataclasses import dataclass
 from datetime import datetime
 import json
+import os
 from pathlib import Path
 import random
 import re
@@ -21,13 +22,19 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
+from src.cerebros import CerebroSpec, GerenciadorCerebros
+from src.grafo_memoria import GrafoMemoriaSQLite
 from src.memoria_pessoas import (
     GerenciadorMemoriaPessoas,
     ROOT_DIR,
     carregar_env,
     normalizar_chave,
 )
-from src.router_systemone import DecisaoRoteador
+from src.router_systemone import DEFAULT_OLLAMA_URL, DecisaoRoteador, normalizar_ollama_url
+from src.skills import ContextoSkill, GerenciadorSkills, ResultadoSkill, criar_gerenciador_skills
+
+
+os.environ.setdefault("OPENCV_LOG_LEVEL", "ERROR")
 
 
 DEFAULT_PROMPT_PATH = ROOT_DIR / "prompts" / "persona_peteleco.md"
@@ -224,12 +231,24 @@ class MotorPersonaPETeleco:
         memoria: Optional[GerenciadorMemoriaPessoas] = None,
         estado: Optional[EstadoCorporal] = None,
         prompt_path: Optional[Path] = None,
-        ollama_url: str = "http://localhost:11434",
+        ollama_url: str = DEFAULT_OLLAMA_URL,
+        cerebros: Optional[GerenciadorCerebros] = None,
+        skills: Optional[GerenciadorSkills] = None,
+        grafo: Optional[GrafoMemoriaSQLite] = None,
+        usar_multi_cerebro: bool = True,
     ) -> None:
         self.memoria = memoria or GerenciadorMemoriaPessoas()
         self.estado = estado or EstadoCorporal()
         self.prompt_base = carregar_system_prompt_base(prompt_path)
-        self.ollama_url = ollama_url.rstrip("/")
+        self.cerebros = cerebros or GerenciadorCerebros()
+        self.grafo = grafo or GrafoMemoriaSQLite(sqlite_path=self.memoria.sqlite_path)
+        self.skills = skills or criar_gerenciador_skills(
+            sqlite_path=self.memoria.sqlite_path,
+            grafo=self.grafo,
+        )
+        self.usar_multi_cerebro = bool(usar_multi_cerebro)
+        self.cerebro_forcado: str = ""
+        self.ollama_url = normalizar_ollama_url(ollama_url)
         self.modo_persona: str = "NORMAL"  # NORMAL | SERIO | DESGRACADO
         self._env = carregar_env()
         self._session = requests.Session()
@@ -469,18 +488,20 @@ class MotorPersonaPETeleco:
             "respeitoso_formal_objetivo",
         )
 
-    def _montar_system_instruction(
+    def _montar_bloco_contexto(
         self,
         pessoa_id: str,
         pessoa_display: str,
         modo_identificacao: str,
         perfil: Dict[str, Any],
+        transcricao: str = "",
     ) -> str:
         perfil_str, memoria_str = self.memoria.formatar_contexto_prompt(pessoa_id)
         modo_efetivo = "SERIO" if self.eh_modo_formal(perfil) else self.modo_persona
         contexto_sala = self.memoria.obter_contexto_sala_recente(limite=3)
+        grafo_str = self.grafo.formatar_subgrafo_prompt(pessoa_id, transcricao)
         data_str, hora_str = self._formatar_data_hora_atual()
-        contexto_turno = (
+        return (
             "=== CONTEXTO DO TURNO (injetado dinamicamente) ===\n"
             f"DATA_HORA_ATUAL: {data_str}, {hora_str}\n"
             f"MODO_PERSONA: {modo_efetivo}\n"
@@ -488,18 +509,50 @@ class MotorPersonaPETeleco:
             f"IDENTIFICACAO: {modo_identificacao}\n"
             f"PERFIL_PESSOA: {{{perfil_str}}}\n"
             f"MEMORIA_PESSOA: {memoria_str}\n"
+            f"GRAFO_MEMORIA: {grafo_str}\n"
             f"ESTADO_CORPORAL: {{{self.estado.formatar_prompt()}}}\n"
             f"TELEMETRIA: {self.estado.formatar_telemetria()}\n"
             f"ULTIMAS_FALAS_SALA: {contexto_sala}"
         )
-        return f"{self.prompt_base}\n\n{contexto_turno}"
+
+    def _montar_system_instruction(
+        self,
+        pessoa_id: str,
+        pessoa_display: str,
+        modo_identificacao: str,
+        perfil: Dict[str, Any],
+        cerebro: Optional[CerebroSpec] = None,
+        dados_skill: str = "",
+        recados_pendentes: str = "",
+        transcricao: str = "",
+    ) -> str:
+        contexto_turno = self._montar_bloco_contexto(
+            pessoa_id=pessoa_id,
+            pessoa_display=pessoa_display,
+            modo_identificacao=modo_identificacao,
+            perfil=perfil,
+            transcricao=transcricao,
+        )
+        if self.usar_multi_cerebro and cerebro is not None:
+            return GerenciadorCerebros.compor_system_instruction(
+                cerebro=cerebro,
+                bloco_contexto=contexto_turno,
+                dados_skill=dados_skill,
+                recados_pendentes=recados_pendentes,
+            )
+        extra = ""
+        if dados_skill.strip():
+            extra += f"\n\n=== DADOS_SKILL ===\n{dados_skill.strip()}"
+        if recados_pendentes.strip():
+            extra += f"\n\n=== RECADOS_PENDENTES ===\n{recados_pendentes.strip()}"
+        return f"{self.prompt_base}\n\n{contexto_turno}{extra}"
 
     def _verificar_interceptadores_fisicos_e_modo(
         self,
         transcricao: str,
         perfil: Dict[str, Any],
     ) -> Optional[Tuple[str, str]]:
-        """Trata troca de modo e avisos de manuseio fisico imediato antes de acionar motores/nuvem."""
+        """Trata troca de modo/cerebro e avisos de manuseio fisico imediato antes de acionar motores/nuvem."""
         norm = normalizar_chave(transcricao)
         formal = self.eh_modo_formal(perfil)
         nome = perfil.get("nome", "")
@@ -512,15 +565,19 @@ class MotorPersonaPETeleco:
                 "sai do modo serio",
                 "sai do modo desgracado",
                 "modo normal",
+                "cerebro automatico",
+                "modo automatico",
             )
         ):
             self.modo_persona = "NORMAL"
+            self.cerebro_forcado = ""
             if perfil.get("papel") == "professor_orientador":
                 return "Certo, professor Felipe. Sigo à disposição.", "local:troca_modo_normal"
             return "Beleza, voltei ao normal!", "local:troca_modo_normal"
 
         if any(f in norm for f in ("entra no modo serio", "modo serio", "fica serio")):
             self.modo_persona = "SERIO"
+            self.cerebro_forcado = ""
             return "Modo sério ativado.", "local:troca_modo_serio"
 
         if any(
@@ -534,12 +591,32 @@ class MotorPersonaPETeleco:
         ):
             if perfil.get("papel") == "professor_orientador":
                 self.modo_persona = "SERIO"
+                self.cerebro_forcado = ""
                 return (
                     "Certo, professor Felipe. Mantenho o modo formal por aqui.",
                     "local:troca_modo_serio",
                 )
             self.modo_persona = "DESGRACADO"
+            self.cerebro_forcado = ""
             return "Modo desgraçado ativado. Agora segura a língua porque eu não vou segurar.", "local:troca_modo_desgracado"
+
+        # Pin manual opcional de cérebro por voz (ex.: "ativa o cérebro técnico")
+        m_cer = re.search(r"(?:ativa|usar|usa|troca pro|muda pro|entra no)\s+(?:o\s+)?cerebro\s+([a-z0-9_]+)", norm)
+        if m_cer:
+            alvo = m_cer.group(1).strip()
+            disponiveis = {c.id: c for c in self.cerebros.listar()}
+            if alvo in disponiveis:
+                spec = disponiveis[alvo]
+                if perfil.get("papel") == "professor_orientador" and spec.bloqueado_para_professor:
+                    return (
+                        "Certo, professor Felipe. Mantenho o cérebro formal ativo para o senhor.",
+                        "local:trava_cerebro_professor",
+                    )
+                self.cerebro_forcado = spec.id
+                return (
+                    f"{spec.nome} ativado por aqui." if formal else f"Botei o {spec.nome} no comando aqui!",
+                    f"local:troca_cerebro:{spec.id}",
+                )
 
         # Aviso de manuseio / pegada no colo -> trava rodas na hora
         if any(
@@ -776,6 +853,32 @@ class MotorPersonaPETeleco:
             return "Iniciando varredura com a câmera." if formal else "Deixa comigo, tô girando a cabeça pra procurar aqui."
         return "Certo."
 
+    def _resolver_skill_turno(
+        self,
+        transcricao: str,
+        decisao_jev: Optional[DecisaoRoteador],
+    ) -> Optional[str]:
+        """Determina se alguma skill modular deve ser acionada neste turno."""
+        if decisao_jev is not None:
+            if decisao_jev.rota_final in ("ignorar", "acao_rover"):
+                return None
+            if decisao_jev.rota_final == "fala_parametrizada" and decisao_jev.subtipo == "previsao_clima":
+                return "clima"
+            raw_sk = getattr(decisao_jev, "skill_sugerida", "nenhuma")
+            raw_conf = getattr(decisao_jev, "confianca_skill", 0.0)
+            sk_jev = raw_sk.strip().lower() if isinstance(raw_sk, str) else "nenhuma"
+            conf_sk = float(raw_conf) if isinstance(raw_conf, (int, float)) else 0.0
+            if sk_jev != "nenhuma" and conf_sk >= 0.55:
+                sk_obj = self.skills.obter(sk_jev)
+                if sk_obj is not None:
+                    # Evita que pergunta científica sobre "céu" dispare Open-Meteo sem pedir clima
+                    if sk_jev == "clima" and decisao_jev.rota_final == "cognicao_gemini" and not sk_obj.pode_atender_local(transcricao):
+                        return None
+                    return sk_jev
+
+        # Fallback determinístico local para comandos inequívocos (ex.: recados/timer/sonoplastia)
+        return self.skills.detectar_skill_local(transcricao)
+
     def responder(
         self,
         transcricao: str,
@@ -784,8 +887,9 @@ class MotorPersonaPETeleco:
         voice_id: str = "desconhecido",
         voice_conf: float = 0.0,
         imagem_jpeg_b64: Optional[str] = None,
+        reproduzir_sfx: bool = False,
     ) -> Dict[str, Any]:
-        """Executa o turno completo (biometria facial -> identificacao -> travas -> rota -> memoria)."""
+        """Executa o turno completo (biometria -> travas -> skills -> multi-cérebro -> memória)."""
         face_id_efetivo = (face_id or "nenhuma").strip()
         if imagem_jpeg_b64 and normalizar_chave(face_id_efetivo) in (
             "",
@@ -805,51 +909,126 @@ class MotorPersonaPETeleco:
             voice_id=voice_id,
             voice_conf=voice_conf,
         )
+        formal = self.eh_modo_formal(perfil)
+        modo_efetivo = "SERIO" if formal else self.modo_persona
 
-        # 1) Interceptadores fisicos/modo tem prioridade imediata
+        sem_rosto = normalizar_chave(face_id_efetivo) in ("", "nenhuma", "nenhum", "auto", "none", "desconhecido")
+        voz_em_duvida = (
+            sem_rosto
+            and voice_id != "desconhecido"
+            and 0.70 <= float(voice_conf) < 0.75
+        )
+        if voz_em_duvida:
+            modo_id = "apenas_voz_confirmar"
+
+        cerebro_usado: Optional[CerebroSpec] = None
+        cerebro_motivo = ""
+        res_skill: Optional[ResultadoSkill] = None
+        if voz_em_duvida:
+            nome_cand = str(perfil.get("nome") or voice_id)
+            recados_pendentes = (
+                f"CONFIRMACAO_DE_VOZ: Pela voz parece {nome_cand} ({int(round(voice_conf * 100))}%), "
+                "mas há ruído ou dúvida; pergunte rapidamente se é ela mesmo antes de assumir certeza."
+            )
+        else:
+            recados_pendentes = self.skills.coletar_recados_pendentes(pessoa_id)
+
+        # 1) Interceptadores fisicos/modo/cerebro tem prioridade imediata
         inter = self._verificar_interceptadores_fisicos_e_modo(transcricao, perfil)
         if inter is not None:
             resposta_texto, origem = inter
-        elif decisao_jev is not None:
-            if decisao_jev.rota_final == "ignorar":
-                return {
-                    "resposta": "",
-                    "resposta_tts": "",
-                    "origem": "ignorar",
-                    "pessoa_id": pessoa_id,
-                    "pessoa_display": pessoa_display,
-                    "modo_identificacao": modo_id,
-                    "modo_persona": "SERIO" if self.eh_modo_formal(perfil) else self.modo_persona,
-                    "estado_corporal": self.estado.formatar_prompt(),
-                }
-            if decisao_jev.rota_final == "pool_fala_pronta":
-                resposta_texto = self._responder_local_pool(decisao_jev.subtipo, perfil)
-                origem = f"local:pool:{decisao_jev.subtipo}"
-            elif decisao_jev.rota_final == "fala_parametrizada":
-                resposta_texto = self._responder_local_parametrizada(
-                    decisao_jev.subtipo, perfil, pessoa_display, modo_id
+        elif decisao_jev is not None and decisao_jev.rota_final == "ignorar":
+            return {
+                "resposta": "",
+                "resposta_tts": "",
+                "origem": "ignorar",
+                "pessoa_id": pessoa_id,
+                "pessoa_display": pessoa_display,
+                "modo_identificacao": modo_id,
+                "modo_persona": modo_efetivo,
+                "estado_corporal": self.estado.formatar_prompt(),
+                "cerebro_id": "",
+                "cerebro_nome": "",
+                "cerebro_motivo": "ignorado",
+                "skill_executada": "",
+                "skill_metadados": {},
+                "sfx_disparado": None,
+            }
+        elif decisao_jev is not None and decisao_jev.rota_final == "acao_rover":
+            resposta_texto = self._responder_acao_rover(decisao_jev, perfil, transcricao=transcricao)
+            origem = f"local:acao:{decisao_jev.subtipo}"
+        else:
+            self.grafo.ingerir_texto(
+                transcricao=transcricao,
+                pessoa_id=pessoa_id,
+                pessoa_nome=str(perfil.get("nome") or pessoa_id),
+                modo="local",
+            )
+            # 2) Skills modulares (via Jev `skill_modular` ou gatilho local inequívoco)
+            skill_id = self._resolver_skill_turno(transcricao, decisao_jev)
+            if skill_id:
+                ctx_skill = ContextoSkill(
+                    transcricao=transcricao,
+                    pessoa_id=pessoa_id,
+                    pessoa_nome=str(perfil.get("nome") or "desconhecido"),
+                    modo_persona=modo_efetivo,
+                    eh_formal=formal,
+                    cerebro_id=self.cerebro_forcado or (decisao_jev.cerebro_sugerido if decisao_jev else "resenha"),
+                    memoria=self.memoria,
                 )
-                origem = f"local:param:{decisao_jev.subtipo}"
-            elif decisao_jev.rota_final == "acao_rover":
-                resposta_texto = self._responder_acao_rover(decisao_jev, perfil, transcricao=transcricao)
-                origem = f"local:acao:{decisao_jev.subtipo}"
-            else:
-                resposta_texto, origem = self._gerar_resposta_llm(
+                res_skill = self.skills.executar(skill_id, ctx_skill)
+
+            if res_skill is not None and not res_skill.precisa_llm and res_skill.resposta_direta:
+                resposta_texto = res_skill.resposta_direta
+                origem = f"skill:{res_skill.skill_id}"
+            elif res_skill is not None:
+                resposta_texto, origem, cerebro_usado, cerebro_motivo = self._gerar_resposta_llm(
                     transcricao=transcricao,
                     pessoa_id=pessoa_id,
                     pessoa_display=pessoa_display,
                     modo_identificacao=modo_id,
                     perfil=perfil,
                     imagem_jpeg_b64=imagem_jpeg_b64,
+                    decisao_jev=decisao_jev,
+                    dados_skill=res_skill.resumo_contexto,
+                    recados_pendentes=recados_pendentes,
                 )
-        else:
-            resposta_texto, origem = self._gerar_resposta_llm(
+            elif decisao_jev is not None and decisao_jev.rota_final == "pool_fala_pronta" and not recados_pendentes:
+                resposta_texto = self._responder_local_pool(decisao_jev.subtipo, perfil)
+                origem = f"local:pool:{decisao_jev.subtipo}"
+            elif (
+                decisao_jev is not None
+                and decisao_jev.rota_final == "fala_parametrizada"
+                and decisao_jev.subtipo != "previsao_clima"
+                and not recados_pendentes
+            ):
+                resposta_texto = self._responder_local_parametrizada(
+                    decisao_jev.subtipo, perfil, pessoa_display, modo_id
+                )
+                origem = f"local:param:{decisao_jev.subtipo}"
+            else:
+                resposta_texto, origem, cerebro_usado, cerebro_motivo = self._gerar_resposta_llm(
+                    transcricao=transcricao,
+                    pessoa_id=pessoa_id,
+                    pessoa_display=pessoa_display,
+                    modo_identificacao=modo_id,
+                    perfil=perfil,
+                    imagem_jpeg_b64=imagem_jpeg_b64,
+                    decisao_jev=decisao_jev,
+                    recados_pendentes=recados_pendentes,
+                )
+
+        # 3) Avaliador anti-cringe de sonoplastia (bloqueado no SERIO / técnico / utilitário)
+        cerebro_id_final = cerebro_usado.id if cerebro_usado else ("serio" if formal else ("desgracado" if modo_efetivo == "DESGRACADO" else "resenha"))
+        sfx_disparado = None
+        if not (res_skill and res_skill.skill_id == "sonoplastia"):
+            sfx_disparado = self.skills.avaliar_sonoplastia(
                 transcricao=transcricao,
-                pessoa_id=pessoa_id,
-                pessoa_display=pessoa_display,
-                modo_identificacao=modo_id,
-                perfil=perfil,
-                imagem_jpeg_b64=imagem_jpeg_b64,
+                resposta=resposta_texto,
+                cerebro_id=cerebro_id_final,
+                modo_persona=modo_efetivo,
+                eh_formal=formal,
+                reproduzir_audio=reproduzir_sfx,
             )
 
         hist_pessoa = self._historicos_por_pessoa.setdefault(pessoa_id, [])
@@ -872,6 +1051,12 @@ class MotorPersonaPETeleco:
             "modo_identificacao": modo_id,
             "modo_persona": "SERIO" if self.eh_modo_formal(perfil) else self.modo_persona,
             "estado_corporal": self.estado.formatar_prompt(),
+            "cerebro_id": cerebro_usado.id if cerebro_usado else "",
+            "cerebro_nome": cerebro_usado.nome if cerebro_usado else "",
+            "cerebro_motivo": cerebro_motivo,
+            "skill_executada": res_skill.skill_id if res_skill else "",
+            "skill_metadados": res_skill.metadados if res_skill else {},
+            "sfx_disparado": sfx_disparado,
         }
 
     def _gerar_resposta_llm(
@@ -882,13 +1067,39 @@ class MotorPersonaPETeleco:
         modo_identificacao: str,
         perfil: Dict[str, Any],
         imagem_jpeg_b64: Optional[str] = None,
-    ) -> Tuple[str, str]:
+        decisao_jev: Optional[DecisaoRoteador] = None,
+        dados_skill: str = "",
+        recados_pendentes: str = "",
+    ) -> Tuple[str, str, Optional[CerebroSpec], str]:
+        cerebro_spec: Optional[CerebroSpec] = None
+        cerebro_motivo = "prompt_unificado_legado"
+        if self.usar_multi_cerebro:
+            raw_cer = getattr(decisao_jev, "cerebro_sugerido", "") if decisao_jev else ""
+            raw_cer_conf = getattr(decisao_jev, "confianca_cerebro", 0.0) if decisao_jev else 0.0
+            cerebro_spec, cerebro_motivo = self.cerebros.resolver_cerebro(
+                modo_persona=self.modo_persona,
+                perfil=perfil,
+                cerebro_jev=raw_cer if isinstance(raw_cer, str) else "",
+                confianca_jev=float(raw_cer_conf) if isinstance(raw_cer_conf, (int, float)) else 0.0,
+                cerebro_forcado=self.cerebro_forcado,
+                tem_dados_skill=bool(dados_skill.strip() or recados_pendentes.strip()),
+                precisa_imagem=bool(imagem_jpeg_b64),
+            )
+
         system_inst = self._montar_system_instruction(
             pessoa_id=pessoa_id,
             pessoa_display=pessoa_display,
             modo_identificacao=modo_identificacao,
             perfil=perfil,
+            cerebro=cerebro_spec,
+            dados_skill=dados_skill,
+            recados_pendentes=recados_pendentes,
+            transcricao=transcricao,
         )
+
+        temperatura = cerebro_spec.temperature if cerebro_spec else None
+        max_tokens = cerebro_spec.max_tokens if cerebro_spec else 320
+        few_shot = cerebro_spec.exemplos_few_shot if cerebro_spec else None
 
         api_key = self._env.get("GEMINI_API_KEY", "").strip()
         if api_key:
@@ -898,9 +1109,13 @@ class MotorPersonaPETeleco:
                 system_inst=system_inst,
                 transcricao=transcricao,
                 imagem_jpeg_b64=imagem_jpeg_b64,
+                temperature=temperatura,
+                max_tokens=max_tokens,
+                exemplos_few_shot=few_shot,
             )
             if texto:
-                return texto, f"gemini:{modelo_usado}"
+                sufixo = f":{cerebro_spec.id}" if cerebro_spec else ""
+                return texto, f"gemini:{modelo_usado}{sufixo}", cerebro_spec, cerebro_motivo
 
         texto_ol, modelo_ol = self._chamar_ollama_chat_fallback(
             pessoa_id=pessoa_id,
@@ -909,11 +1124,13 @@ class MotorPersonaPETeleco:
             imagem_jpeg_b64=imagem_jpeg_b64,
         )
         if texto_ol:
-            return texto_ol, f"ollama_chat:{modelo_ol}"
+            return texto_ol, f"ollama_chat:{modelo_ol}", cerebro_spec, cerebro_motivo
 
         return (
             "Não consegui conectar no Gemini nem achei modelo de chat local no Ollama. Confere sua GEMINI_API_KEY no .env!",
             "fallback_sem_llm",
+            cerebro_spec,
+            cerebro_motivo,
         )
 
     def _chamar_gemini_rest(
@@ -923,23 +1140,26 @@ class MotorPersonaPETeleco:
         system_inst: str,
         transcricao: str,
         imagem_jpeg_b64: Optional[str] = None,
+        temperature: Optional[float] = None,
+        max_tokens: int = 320,
+        exemplos_few_shot: Optional[List[Tuple[str, str]]] = None,
     ) -> Tuple[str, str]:
         modelos: List[str] = []
         for cand in (
             self._env.get("GEMINI_PERSONA_MODEL", ""),
             "gemini-3.5-flash-lite",
             self._env.get("GEMINI_MODEL", ""),
+            "gemini-flash-lite-latest",
             "gemini-3.1-flash-lite",
-            "gemini-3.5-flash",
-            "gemini-3.8-flash",
-            "gemini-2.5-flash-lite",
-            "gemini-2.5-flash",
         ):
             m = cand.strip()
             if m and m not in modelos:
                 modelos.append(m)
 
         contents: List[Dict[str, Any]] = []
+        for u_ex, a_ex in (exemplos_few_shot or []):
+            contents.append({"role": "user", "parts": [{"text": u_ex}]})
+            contents.append({"role": "model", "parts": [{"text": a_ex}]})
         hist_pessoa = self._obter_historico_hidratado(pessoa_id)
         for item in hist_pessoa[-12:]:
             contents.append(
@@ -953,10 +1173,19 @@ class MotorPersonaPETeleco:
             partes_atual.append({"inlineData": {"mimeType": "image/jpeg", "data": imagem_jpeg_b64}})
         contents.append({"role": "user", "parts": partes_atual})
 
+        if temperature is None:
+            temperatura = 1.0
+            if "MODO_PERSONA: SERIO" in system_inst:
+                temperatura = 0.45
+            elif "MODO_PERSONA: DESGRACADO" in system_inst:
+                temperatura = 1.1
+        else:
+            temperatura = float(temperature)
+
         payload = {
             "systemInstruction": {"parts": [{"text": system_inst}]},
             "contents": contents,
-            "generationConfig": {"temperature": 0.85, "maxOutputTokens": 320},
+            "generationConfig": {"temperature": temperatura, "maxOutputTokens": int(max_tokens)},
         }
 
         for modelo in modelos:
